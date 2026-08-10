@@ -124,6 +124,9 @@
       <input id="setting-name-partner" type="text" placeholder="ex. Prénom">
       <button id="save-settings" class="btn btn-primary btn-block">Enregistrer</button>
 
+      <h2 class="section-title">Export</h2>
+      <button id="export-pdf" class="btn btn-ghost btn-block">📄 Exporter en PDF (budget, invités, comité)</button>
+
       <div class="danger-zone">
         <button id="change-code" class="btn btn-ghost btn-block">Changer le code (pour vous deux)</button>
       </div>
@@ -145,6 +148,9 @@
 <div id="modal-backdrop" class="modal-backdrop hidden">
   <div class="modal" id="modal-content"></div>
 </div>
+
+<!-- Zone d'impression (visible uniquement lors de l'export PDF) -->
+<div id="print-area"></div>
 
 <script type="module" src="firebase-config.js"></script>
 <script type="module" src="app.js"></script>

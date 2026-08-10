@@ -295,6 +295,7 @@ function setupNav() {
   });
   $("#settings-btn").addEventListener("click", () => switchView("settings"));
   $("#save-settings").addEventListener("click", saveSettings);
+  $("#export-pdf").addEventListener("click", exportPDF);
 
   $$("#task-filters .chip").forEach(chip => {
     chip.addEventListener("click", () => {
@@ -337,6 +338,58 @@ async function saveSettings() {
     nomPartenaire: $("#setting-name-partner").value.trim()
   });
   switchView("dashboard");
+}
+
+// ---------------------------------------------------------------
+// Export PDF (budget + invités + comité) via l'impression du navigateur
+// ---------------------------------------------------------------
+function exportPDF() {
+  const byCat = groupBudgetByCategory();
+  const totalEstime = budgetItems.reduce((s,i) => s + i.qte * i.prixUnitaire, 0);
+  const totalReel = budgetItems.reduce((s,i) => s + (i.prixReel||0), 0);
+
+  let budgetRows = "";
+  BUDGET_CATEGORIES.filter(c => byCat[c]?.length).forEach(cat => {
+    byCat[cat].forEach(i => {
+      budgetRows += `<tr><td>${cat}</td><td>${escapeHtml(i.nom)}</td><td>${i.qte}</td>
+        <td>${fmt(i.prixUnitaire)}</td><td>${fmt(i.qte*i.prixUnitaire)}</td>
+        <td>${fmt(i.prixReel||0)}</td><td>${escapeHtml(i.priseEnCharge||"")}</td></tr>`;
+    });
+  });
+
+  const guestRows = guests.map(g => `<tr><td>${escapeHtml(g.nom)}</td><td>${g.categorie||""}</td>
+    <td>${g.cote||""}</td><td>${g.statut==="confirme"?"Confirmé":g.statut==="decline"?"Décliné":"En attente"}</td></tr>`).join("");
+
+  const committeeRows = committee.map(m => `<tr><td>${escapeHtml(m.role||"")}</td>
+    <td>${escapeHtml(m.nom)}</td><td>${escapeHtml(m.contact||"")}</td><td>${m.cote||""}</td></tr>`).join("");
+
+  const dateStr = meta.dateMariage ? new Date(meta.dateMariage).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "Date à définir";
+
+  $("#print-area").innerHTML = `
+    <div class="print-h1">Notre Mariage — Récapitulatif</div>
+    <div class="print-sub">${dateStr} · Généré le ${new Date().toLocaleDateString("fr-FR")}</div>
+
+    <div class="print-h2">Budget</div>
+    ${budgetRows ? `<table class="print-table">
+      <tr><th>Catégorie</th><th>Poste</th><th>Qté</th><th>Prix unit.</th><th>Estimé</th><th>Payé</th><th>Pris en charge</th></tr>
+      ${budgetRows}
+      <tr class="print-total"><td colspan="4">TOTAL</td><td>${fmt(totalEstime)} FCFA</td><td>${fmt(totalReel)} FCFA</td><td></td></tr>
+    </table>` : `<p class="print-empty">Aucune dépense enregistrée.</p>`}
+
+    <div class="print-h2">Invités (${guests.length})</div>
+    ${guestRows ? `<table class="print-table">
+      <tr><th>Nom</th><th>Catégorie</th><th>Côté</th><th>Statut</th></tr>
+      ${guestRows}
+    </table>` : `<p class="print-empty">Aucun invité enregistré.</p>`}
+
+    <div class="print-h2">Comité d'organisation (${committee.length})</div>
+    ${committeeRows ? `<table class="print-table">
+      <tr><th>Rôle</th><th>Nom</th><th>Contact</th><th>Côté</th></tr>
+      ${committeeRows}
+    </table>` : `<p class="print-empty">Aucun membre enregistré.</p>`}
+  `;
+
+  window.print();
 }
 
 // ---------------------------------------------------------------
@@ -714,14 +767,28 @@ function openCommitteeModal(existing) {
   const html = `
     <h3>${isNew ? "Nouveau membre du comité" : "Modifier ce membre"}</h3>
     <select id="m-role">${COMMITTEE_ROLES.map(r => `<option ${existing?.role===r?"selected":""}>${r}</option>`).join("")}</select>
-    <input id="m-nom" type="text" placeholder="Nom complet" value="${existing ? escapeAttr(existing.nom) : ""}">
-    <input id="m-contact" type="tel" placeholder="Contact (téléphone, optionnel)" value="${existing ? escapeAttr(existing.contact||"") : ""}">
+    <input id="m-nom" type="text" placeholder="Nom complet" autocomplete="name" value="${existing ? escapeAttr(existing.nom) : ""}">
+    <input id="m-contact" type="tel" placeholder="Contact (touchez pour suggestions)" autocomplete="tel" value="${existing ? escapeAttr(existing.contact||"") : ""}">
+    <button type="button" id="m-pick-contact" class="btn btn-ghost btn-block" style="margin-bottom:12px;display:none;">📇 Choisir depuis mes contacts</button>
     <select id="m-cote">${COMMITTEE_SIDES.map(s => `<option ${existing?.cote===s?"selected":""}>${s}</option>`).join("")}</select>
     <div class="modal-actions">
       ${existing ? `<button class="btn btn-danger" id="m-delete">Supprimer</button>` : ""}
       <button class="btn btn-primary" id="m-save">Enregistrer</button>
     </div>`;
   openModal(html, () => {
+    if ("contacts" in navigator && "ContactsManager" in window) {
+      const pickBtn = $("#m-pick-contact");
+      pickBtn.style.display = "block";
+      pickBtn.addEventListener("click", async () => {
+        try {
+          const [c] = await navigator.contacts.select(["name", "tel"], { multiple: false });
+          if (c) {
+            if (c.name?.[0]) $("#m-nom").value = c.name[0];
+            if (c.tel?.[0]) $("#m-contact").value = c.tel[0];
+          }
+        } catch (e) { /* annulé par l'utilisateur */ }
+      });
+    }
     $("#m-save").addEventListener("click", async () => {
       const data = {
         role: $("#m-role").value,
