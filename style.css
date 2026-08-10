@@ -240,11 +240,11 @@ input{font-family:inherit;}
   z-index:20;
 }
 .tab-btn{
-  flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
-  font-size:10.5px;font-weight:600;color:rgba(31,42,36,0.45);padding:6px 0;border-radius:10px;
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  font-size:9.5px;font-weight:600;color:rgba(31,42,36,0.45);padding:6px 0;border-radius:10px;
 }
 .tab-btn.active{color:var(--emeraude);}
-.tab-icon{font-size:17px;}
+.tab-icon{font-size:16px;}
 
 /* ---------- Modal ---------- */
 .modal-backdrop{

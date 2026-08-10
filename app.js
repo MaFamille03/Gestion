@@ -17,6 +17,13 @@ const BUDGET_CATEGORIES = [
   "Administratif", "Divers"
 ];
 const GUEST_CATEGORIES = ["VIP", "Famille", "Amis", "Église", "Comité"];
+const COMMITTEE_ROLES = [
+  "PCO / Chef de protocole", "Best Man", "Dame de compagnie",
+  "Garçon d'honneur", "Fille d'honneur", "Responsable Garçons & Filles d'Honneur",
+  "Commission Décoration", "Commission Logistique", "Commission Gastronomie",
+  "Commission Animation", "Autre"
+];
+const COMMITTEE_SIDES = ["Marié", "Mariée", "Les deux"];
 
 const DEFAULT_BUDGET_SEED = [
   { nom: "Dot complète (accord des familles)", categorie: "Dot & Coutumier", qte: 1, prixUnitaire: 1112005, prixReel: 0, priseEnCharge: "Les deux" },
@@ -61,8 +68,10 @@ let meta = { dateMariage: null, nombreInvites: 300, nomMoi: "", nomPartenaire: "
 let budgetItems = [];
 let tasks = [];
 let guests = [];
+let committee = [];
 let taskFilter = "all";
 let guestFilter = "all";
+let committeeFilter = "all";
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -172,6 +181,7 @@ async function enterApp(c) {
   listenBudget();
   listenTasks();
   listenGuests();
+  listenCommittee();
   setupNav();
   setupModals();
   watchOfficialCode();
@@ -269,6 +279,13 @@ function listenGuests() {
   });
 }
 
+function listenCommittee() {
+  onSnapshot(collection(db, "mariages", code, "comite"), (snap) => {
+    committee = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderCommittee();
+  });
+}
+
 // ---------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------
@@ -293,6 +310,14 @@ function setupNav() {
       chip.classList.add("active");
       guestFilter = chip.dataset.filter;
       renderGuests();
+    });
+  });
+  $$("#committee-filters .chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      $$("#committee-filters .chip").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+      committeeFilter = chip.dataset.filter;
+      renderCommittee();
     });
   });
 }
@@ -665,12 +690,71 @@ function openGuestModal(existing) {
 }
 
 // ---------------------------------------------------------------
+// Comité d'organisation
+// ---------------------------------------------------------------
+function renderCommittee() {
+  let list = committeeFilter === "all" ? committee : committee.filter(m => m.cote === committeeFilter);
+
+  $("#committee-full-list").innerHTML = list.length ? list.map(m => `
+    <li class="guest-item" data-edit="${m.id}">
+      <div class="task-body">
+        <div class="task-title">${escapeHtml(m.nom || "(nom à renseigner)")}</div>
+        <div class="task-meta">${escapeHtml(m.role || "")}${m.contact ? " · " + escapeHtml(m.contact) : ""}</div>
+      </div>
+      <span class="guest-item-cat">${m.cote || ""}</span>
+    </li>`).join("") : `<li class="empty-state">Aucun membre pour l'instant.</li>`;
+
+  $$(`#committee-full-list [data-edit]`).forEach(el => {
+    el.addEventListener("click", () => openCommitteeModal(committee.find(x => x.id === el.dataset.edit)));
+  });
+}
+
+function openCommitteeModal(existing) {
+  const isNew = !existing;
+  const html = `
+    <h3>${isNew ? "Nouveau membre du comité" : "Modifier ce membre"}</h3>
+    <select id="m-role">${COMMITTEE_ROLES.map(r => `<option ${existing?.role===r?"selected":""}>${r}</option>`).join("")}</select>
+    <input id="m-nom" type="text" placeholder="Nom complet" value="${existing ? escapeAttr(existing.nom) : ""}">
+    <input id="m-contact" type="tel" placeholder="Contact (téléphone, optionnel)" value="${existing ? escapeAttr(existing.contact||"") : ""}">
+    <select id="m-cote">${COMMITTEE_SIDES.map(s => `<option ${existing?.cote===s?"selected":""}>${s}</option>`).join("")}</select>
+    <div class="modal-actions">
+      ${existing ? `<button class="btn btn-danger" id="m-delete">Supprimer</button>` : ""}
+      <button class="btn btn-primary" id="m-save">Enregistrer</button>
+    </div>`;
+  openModal(html, () => {
+    $("#m-save").addEventListener("click", async () => {
+      const data = {
+        role: $("#m-role").value,
+        nom: $("#m-nom").value.trim(),
+        contact: $("#m-contact").value.trim(),
+        cote: $("#m-cote").value
+      };
+      if (!data.nom) return;
+      if (isNew) {
+        await addDoc(collection(db, "mariages", code, "comite"), { ...data, createdAt: serverTimestamp() });
+      } else {
+        await updateDoc(doc(db, "mariages", code, "comite", existing.id), data);
+      }
+      closeModal();
+    });
+    if (existing) {
+      $("#m-delete").addEventListener("click", async () => {
+        if (!confirm("Supprimer ce membre du comité ?")) return;
+        await deleteDoc(doc(db, "mariages", code, "comite", existing.id));
+        closeModal();
+      });
+    }
+  });
+}
+
+// ---------------------------------------------------------------
 // Modale générique
 // ---------------------------------------------------------------
 function setupModals() {
   $("#add-task").addEventListener("click", () => openTaskModal(null));
   $("#add-budget-item").addEventListener("click", () => openBudgetModal(null));
   $("#add-guest").addEventListener("click", () => openGuestModal(null));
+  $("#add-committee").addEventListener("click", () => openCommitteeModal(null));
   $("#modal-backdrop").addEventListener("click", (e) => {
     if (e.target.id === "modal-backdrop") closeModal();
   });

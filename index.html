@@ -99,6 +99,18 @@
       <button id="add-guest" class="btn btn-ghost btn-block">+ Ajouter un invité</button>
     </section>
 
+    <!-- COMITÉ -->
+    <section id="view-committee" class="view">
+      <div class="filter-row" id="committee-filters">
+        <button class="chip active" data-filter="all">Tous</button>
+        <button class="chip" data-filter="Marié">Côté Marié</button>
+        <button class="chip" data-filter="Mariée">Côté Mariée</button>
+        <button class="chip" data-filter="Les deux">Les deux</button>
+      </div>
+      <ul class="guest-list" id="committee-full-list"></ul>
+      <button id="add-committee" class="btn btn-ghost btn-block">+ Ajouter un membre</button>
+    </section>
+
     <!-- RÉGLAGES -->
     <section id="view-settings" class="view">
       <h2 class="section-title">Informations du mariage</h2>
@@ -124,6 +136,7 @@
     <button class="tab-btn" data-view="budget"><span class="tab-icon">◈</span>Budget</button>
     <button class="tab-btn" data-view="tasks"><span class="tab-icon">✓</span>Tâches</button>
     <button class="tab-btn" data-view="guests"><span class="tab-icon">✦</span>Invités</button>
+    <button class="tab-btn" data-view="committee"><span class="tab-icon">❖</span>Comité</button>
   </nav>
 
 </div>
