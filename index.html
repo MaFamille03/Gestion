@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Notre Mariage — Coordination</title>
+<meta name="theme-color" content="#1B4332">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Écran de connexion au code du mariage -->
+<div id="gate" class="gate">
+  <div class="gate-card">
+    <div class="wax-divider" aria-hidden="true"></div>
+    <h1 class="gate-title">Notre Mariage</h1>
+    <p class="gate-sub">Entrez le code partagé pour accéder à votre espace de coordination.</p>
+    <input id="gate-input" type="text" placeholder="Code du mariage" autocomplete="off">
+    <button id="gate-submit" class="btn btn-primary">Entrer</button>
+    <p class="gate-hint">Le code est choisi une fois par vous deux et donne accès aux mêmes données, en temps réel, sur vos deux téléphones.</p>
+  </div>
+</div>
+
+<!-- Application -->
+<div id="app" class="app hidden">
+
+  <header class="topbar">
+    <div class="topbar-title">
+      <span class="eyebrow">Coordination</span>
+      <h1 id="wedding-date-display">—</h1>
+    </div>
+    <button id="settings-btn" class="icon-btn" aria-label="Réglages">⚙</button>
+  </header>
+
+  <main class="views">
+
+    <!-- TABLEAU DE BORD -->
+    <section id="view-dashboard" class="view active">
+      <div class="countdown-card">
+        <div class="countdown-number" id="countdown-days">—</div>
+        <div class="countdown-label">jours avant le grand jour</div>
+      </div>
+
+      <div class="alert-stack" id="alert-stack"></div>
+
+      <h2 class="section-title">À faire cette semaine</h2>
+      <ul class="task-list" id="dashboard-upcoming"></ul>
+
+      <h2 class="section-title">Risque d'oubli</h2>
+      <ul class="task-list" id="dashboard-forgotten"></ul>
+
+      <h2 class="section-title">Budget en un coup d'œil</h2>
+      <div class="budget-summary" id="dashboard-budget"></div>
+    </section>
+
+    <!-- BUDGET -->
+    <section id="view-budget" class="view">
+      <div class="budget-total-card">
+        <div>
+          <span class="eyebrow">Budget total</span>
+          <div class="budget-total-figure"><span id="budget-total-real">0</span> / <span id="budget-total-planned">0</span> FCFA</div>
+        </div>
+        <div class="budget-bar-track"><div class="budget-bar-fill" id="budget-total-bar"></div></div>
+      </div>
+      <div id="budget-categories"></div>
+      <button id="add-budget-item" class="btn btn-ghost btn-block">+ Ajouter une dépense</button>
+    </section>
+
+    <!-- TÂCHES -->
+    <section id="view-tasks" class="view">
+      <div class="filter-row" id="task-filters">
+        <button class="chip active" data-filter="all">Toutes</button>
+        <button class="chip" data-filter="mine">Moi</button>
+        <button class="chip" data-filter="partner">Elle/Lui</button>
+        <button class="chip" data-filter="done">Terminées</button>
+      </div>
+      <ul class="task-list" id="task-full-list"></ul>
+      <button id="add-task" class="btn btn-ghost btn-block">+ Ajouter une tâche</button>
+    </section>
+
+    <!-- INVITÉS -->
+    <section id="view-guests" class="view">
+      <div class="guest-summary" id="guest-summary"></div>
+      <div class="filter-row" id="guest-filters">
+        <button class="chip active" data-filter="all">Tous</button>
+        <button class="chip" data-filter="VIP">VIP</button>
+        <button class="chip" data-filter="Famille">Famille</button>
+        <button class="chip" data-filter="Amis">Amis</button>
+        <button class="chip" data-filter="Église">Église</button>
+        <button class="chip" data-filter="Comité">Comité</button>
+      </div>
+      <ul class="guest-list" id="guest-full-list"></ul>
+      <button id="add-guest" class="btn btn-ghost btn-block">+ Ajouter un invité</button>
+    </section>
+
+    <!-- RÉGLAGES -->
+    <section id="view-settings" class="view">
+      <h2 class="section-title">Informations du mariage</h2>
+      <label class="field-label">Date du mariage</label>
+      <input id="setting-date" type="date">
+      <label class="field-label">Nombre d'invités visé</label>
+      <input id="setting-guests" type="number">
+      <label class="field-label">Prénom — vous</label>
+      <input id="setting-name-me" type="text" placeholder="ex. Bérenger">
+      <label class="field-label">Prénom — votre partenaire</label>
+      <input id="setting-name-partner" type="text" placeholder="ex. Prénom">
+      <button id="save-settings" class="btn btn-primary btn-block">Enregistrer</button>
+
+      <div class="danger-zone">
+        <button id="change-code" class="btn btn-ghost btn-block">Changer le code (pour vous deux)</button>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab-btn active" data-view="dashboard"><span class="tab-icon">◆</span>Accueil</button>
+    <button class="tab-btn" data-view="budget"><span class="tab-icon">◈</span>Budget</button>
+    <button class="tab-btn" data-view="tasks"><span class="tab-icon">✓</span>Tâches</button>
+    <button class="tab-btn" data-view="guests"><span class="tab-icon">✦</span>Invités</button>
+  </nav>
+
+</div>
+
+<!-- Modale générique (ajout/édition) -->
+<div id="modal-backdrop" class="modal-backdrop hidden">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<script type="module" src="firebase-config.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
