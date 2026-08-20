@@ -1,4 +1,4 @@
-x<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
@@ -11,24 +11,9 @@ x<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
-
-  <!-- ============ CONNEXION ============ -->
-  <div id="loginScreen" class="login-screen">
-    <form id="loginForm" class="login-card">
-      <div class="login-brand"><span class="dot"></span>MA FAMILLE</div>
-      <h2>Connexion</h2>
-      <p class="login-sub">Gestion privée du foyer — budget, comptes, épargne, dettes et prévisions en FCFA.</p>
-      <input type="email" id="loginEmail" placeholder="Adresse e-mail" autocomplete="username" required>
-      <input type="password" id="loginPassword" placeholder="Mot de passe" autocomplete="current-password" required>
-      <div class="login-error" id="loginError"></div>
-      <button type="submit" class="cta-inline login-btn" id="loginSubmitBtn">Se connecter</button>
-      <button type="button" class="login-link" id="forgotPasswordBtn">Mot de passe oublié ?</button>
-    </form>
-  </div>
 
   <!-- ============ CRÉATION DU FOYER (première utilisation) ============ -->
   <div id="setupScreen" class="login-screen" style="display:none;">
@@ -115,7 +100,6 @@ x<!DOCTYPE html>
       </div>
       <div class="topbar-actions">
         <span class="sync-badge" id="syncBadge">🔄 connexion…</span>
-        <button class="icon-btn" title="Se déconnecter" onclick="logout()">🔒</button>
       </div>
     </div>
 
@@ -480,8 +464,8 @@ x<!DOCTYPE html>
           </div>
         </div>
         <div class="card">
-          <h2>Compte</h2>
-          <button class="icon-btn wide" onclick="logout()">🔒 Se déconnecter</button>
+          <h2>Accès</h2>
+          <div class="alert orange"><span>⚠️</span><div><b>Aucun mot de passe</b><p>Ce site n'a plus d'écran de connexion : toute personne possédant le lien peut voir et modifier ces données. Ne le partagez pas et évitez de le publier ailleurs que dans votre navigateur.</p></div></div>
         </div>
       </div>
 
