@@ -19,9 +19,12 @@ const firebaseConfig = {
   appId: "REMPLACER"
 };
 firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
 const db = firebase.firestore();
-let DOC_REF = null; // défini après connexion : db.collection('foyers').doc(uid)
+/* Pas de connexion : toutes les données vivent dans UN SEUL document fixe.
+   Cet identifiant doit correspondre exactement à celui utilisé dans la règle
+   Firestore (Console > Firestore Database > Règles). */
+const FOYER_DOC_ID = 'DsNWFrLX3QgaYNtLIjiXRnb8C8y1';
+const DOC_REF = db.collection('foyers').doc(FOYER_DOC_ID);
 
 /* ============ CONSTANTES ============ */
 const ACCOUNT_TYPES = [
@@ -62,7 +65,6 @@ const INCOME_CATEGORIES = [
 ];
 const DEFAULT_THRESHOLDS = [50, 75, 90];
 const LOCAL_KEY = 'mafamille_local_v1';
-const INACTIVITY_LIMIT_MS = 10 * 60 * 1000;
 
 /* ============ HELPERS GÉNÉRAUX ============ */
 /* Échappe tout texte saisi par l'utilisateur avant de l'insérer dans du HTML,
@@ -217,14 +219,10 @@ function saveData(){
 
 /* ============ ÉCRANS ============ */
 function hideAllGateScreens(){
-  ['loginScreen','setupScreen','appRoot'].forEach(id => {
+  ['setupScreen','appRoot'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
-}
-function showLoginScreen(){
-  hideAllGateScreens();
-  document.getElementById('loginScreen').style.display = 'flex';
 }
 function showSetupScreen(){
   hideAllGateScreens();
@@ -234,61 +232,6 @@ function showAppRoot(){
   hideAllGateScreens();
   document.getElementById('appRoot').style.display = 'block';
 }
-
-/* ============ CONNEXION ============ */
-function handleLogin(e){
-  e.preventDefault();
-  const email = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value;
-  const errEl = document.getElementById('loginError');
-  const btn = document.getElementById('loginSubmitBtn');
-  errEl.textContent = '';
-  btn.disabled = true;
-  btn.textContent = 'Connexion…';
-  auth.signInWithEmailAndPassword(email, password)
-    .catch(err => {
-      console.error('Erreur de connexion :', err);
-      errEl.textContent = 'Identifiant ou mot de passe incorrect.';
-    })
-    .finally(() => {
-      btn.disabled = false;
-      btn.textContent = 'Se connecter';
-    });
-}
-function handleForgotPassword(){
-  const email = (document.getElementById('loginEmail').value || '').trim();
-  if(!email){
-    alert('Entrez d\'abord votre adresse e-mail dans le champ ci-dessus, puis cliquez à nouveau sur "Mot de passe oublié".');
-    return;
-  }
-  auth.sendPasswordResetEmail(email)
-    .then(() => alert(`Un e-mail de réinitialisation a été envoyé à ${email}.`))
-    .catch(err => {
-      console.error('Erreur de réinitialisation :', err);
-      alert('Impossible d\'envoyer l\'e-mail de réinitialisation. Vérifiez l\'adresse saisie.');
-    });
-}
-function logout(){
-  if(!confirm('Se déconnecter ?')) return;
-  auth.signOut();
-}
-window.logout = logout;
-let inactivityTimer = null;
-let loggedOutForInactivity = false;
-function resetInactivityTimer(){
-  if(!auth.currentUser) return;
-  if(inactivityTimer) clearTimeout(inactivityTimer);
-  inactivityTimer = setTimeout(() => {
-    loggedOutForInactivity = true;
-    auth.signOut();
-  }, INACTIVITY_LIMIT_MS);
-}
-function clearInactivityTimer(){
-  if(inactivityTimer){ clearTimeout(inactivityTimer); inactivityTimer = null; }
-}
-['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(evt => {
-  document.addEventListener(evt, resetInactivityTimer, {passive:true});
-});
 
 /* ============ CRÉATION DU FOYER (première utilisation) ============ */
 document.getElementById('stBebeCheck').addEventListener('change', function(){
@@ -347,47 +290,32 @@ function handleSetupSubmit(e){
   });
 }
 
-/* ============ SYNCHRONISATION ============ */
+/* ============ SYNCHRONISATION ============
+   Pas d'authentification : l'application se connecte directement au document
+   fixe FOYER_DOC_ID dès le chargement de la page. L'accès aux données repose
+   uniquement sur la confidentialité du lien du site — voir la carte "Accès"
+   dans Paramètres. */
 function startSync(){
-  document.getElementById('loginForm').addEventListener('submit', handleLogin);
-  document.getElementById('forgotPasswordBtn').addEventListener('click', handleForgotPassword);
   document.getElementById('setupForm').addEventListener('submit', handleSetupSubmit);
-  auth.onAuthStateChanged(user => {
-    if(!user){
-      dataReady = false;
+  DOC_REF.onSnapshot(snap => {
+    if(snap.exists){
+      const shared = snap.data();
+      DATA = Object.assign(defaultFoyerData(), shared);
+      DATA.membres = Object.assign(defaultFoyerData().membres, shared.membres || {});
+      foyerExists = true;
+      dataReady = true;
+      setSyncBadge('ok');
+      showAppRoot();
+      switchView(currentView);
+      renderAll();
+    } else {
       foyerExists = false;
-      DOC_REF = null;
-      clearInactivityTimer();
-      showLoginScreen();
-      if(loggedOutForInactivity){
-        const errEl = document.getElementById('loginError');
-        if(errEl) errEl.textContent = `Vous avez été déconnecté(e) après ${INACTIVITY_LIMIT_MS/60000} minutes d'inactivité.`;
-        loggedOutForInactivity = false;
-      }
-      return;
+      dataReady = false;
+      showSetupScreen();
     }
-    resetInactivityTimer();
-    DOC_REF = db.collection('foyers').doc(user.uid);
-    DOC_REF.onSnapshot(snap => {
-      if(snap.exists){
-        const shared = snap.data();
-        DATA = Object.assign(defaultFoyerData(), shared);
-        DATA.membres = Object.assign(defaultFoyerData().membres, shared.membres || {});
-        foyerExists = true;
-        dataReady = true;
-        setSyncBadge('ok');
-        showAppRoot();
-        switchView(currentView);
-        renderAll();
-      } else {
-        foyerExists = false;
-        dataReady = false;
-        showSetupScreen();
-      }
-    }, err => {
-      console.error('Erreur de synchronisation Firestore :', err);
-      setSyncBadge('err');
-    });
+  }, err => {
+    console.error('Erreur de synchronisation Firestore :', err);
+    setSyncBadge('err');
   });
 }
 
@@ -1378,7 +1306,7 @@ function renderReportComparison(){
 /* ============ PARAMÈTRES ============ */
 function renderSettings(){
   document.getElementById('settingsProfile').innerHTML = `
-    <div class="settings-row"><div><div class="label">${escapeHtml(DATA.profil.prenom)} ${escapeHtml(DATA.profil.nom)}</div><div class="desc">${escapeHtml(auth.currentUser ? auth.currentUser.email : '')}</div></div></div>
+    <div class="settings-row"><div><div class="label">${escapeHtml(DATA.profil.prenom)} ${escapeHtml(DATA.profil.nom)}</div></div></div>
     <div class="settings-row"><div><div class="label">Téléphone</div><div class="desc">${escapeHtml(DATA.profil.telephone) || 'Non renseigné'}</div></div></div>
     <div class="settings-row"><div><div class="label">Foyer</div><div class="desc">${escapeHtml(DATA.foyer.nom)}</div></div></div>`;
   const el = document.getElementById('settingsCategoriesList');
