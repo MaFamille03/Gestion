@@ -11,12 +11,12 @@
    (Console Firebase > Paramètres du projet > Vos applications).
    Voir le guide de déploiement (DEPLOIEMENT.md) fourni avec ce projet. */
 const firebaseConfig = {
-  apiKey: "REMPLACER_PAR_VOTRE_API_KEY",
-  authDomain: "REMPLACER.firebaseapp.com",
-  projectId: "REMPLACER",
-  storageBucket: "REMPLACER.firebasestorage.app",
-  messagingSenderId: "REMPLACER",
-  appId: "REMPLACER"
+  apiKey: "AIzaSyD1Rn_zTfhoptj6u4EO42d6ks2HmHXkQ_s",
+  authDomain: "ma-famille-5084c.firebaseapp.com",
+  projectId: "ma-famille-5084c",
+  storageBucket: "ma-famille-5084c.firebasestorage.app",
+  messagingSenderId: "908502729265",
+  appId: "1:908502729265:web:60afd8942265e4db340b10"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
