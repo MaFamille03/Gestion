@@ -1,158 +1,494 @@
-<!DOCTYPE html>
+x<!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Notre Mariage — Coordination</title>
-<meta name="theme-color" content="#1B4332">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="icon" href="icon-192.png">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ma Famille — Gestion du foyer</title>
+<meta name="description" content="Application personnelle de gestion financière et familiale du foyer — budget, comptes, épargne, dettes, bébé, aide à la maison, prévisions." />
+<link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
-<!-- Écran de connexion au code du mariage -->
-<div id="gate" class="gate">
-  <div class="gate-card">
-    <div class="wax-divider" aria-hidden="true"></div>
-    <h1 class="gate-title">Notre Mariage</h1>
-    <p class="gate-sub">Entrez le code partagé pour accéder à votre espace de coordination.</p>
-    <input id="gate-input" type="text" placeholder="Code du mariage" autocomplete="off">
-    <button id="gate-submit" class="btn btn-primary">Entrer</button>
-    <p class="gate-hint">Le code est choisi une fois par vous deux et donne accès aux mêmes données, en temps réel, sur vos deux téléphones.</p>
+  <!-- ============ CONNEXION ============ -->
+  <div id="loginScreen" class="login-screen">
+    <form id="loginForm" class="login-card">
+      <div class="login-brand"><span class="dot"></span>MA FAMILLE</div>
+      <h2>Connexion</h2>
+      <p class="login-sub">Gestion privée du foyer — budget, comptes, épargne, dettes et prévisions en FCFA.</p>
+      <input type="email" id="loginEmail" placeholder="Adresse e-mail" autocomplete="username" required>
+      <input type="password" id="loginPassword" placeholder="Mot de passe" autocomplete="current-password" required>
+      <div class="login-error" id="loginError"></div>
+      <button type="submit" class="cta-inline login-btn" id="loginSubmitBtn">Se connecter</button>
+      <button type="button" class="login-link" id="forgotPasswordBtn">Mot de passe oublié ?</button>
+    </form>
   </div>
-</div>
 
-<!-- Application -->
-<div id="app" class="app hidden">
-
-  <header class="topbar">
-    <div class="topbar-title">
-      <span class="eyebrow">Coordination</span>
-      <h1 id="wedding-date-display">—</h1>
-    </div>
-    <button id="settings-btn" class="icon-btn" aria-label="Réglages">⚙</button>
-  </header>
-
-  <main class="views">
-
-    <!-- TABLEAU DE BORD -->
-    <section id="view-dashboard" class="view active">
-      <div class="countdown-card">
-        <div class="countdown-number" id="countdown-days">—</div>
-        <div class="countdown-label">jours avant le grand jour</div>
-      </div>
-
-      <div class="alert-stack" id="alert-stack"></div>
-
-      <h2 class="section-title">À faire cette semaine</h2>
-      <ul class="task-list" id="dashboard-upcoming"></ul>
-
-      <h2 class="section-title">Risque d'oubli</h2>
-      <ul class="task-list" id="dashboard-forgotten"></ul>
-
-      <h2 class="section-title">Budget en un coup d'œil</h2>
-      <div class="budget-summary" id="dashboard-budget"></div>
-    </section>
-
-    <!-- BUDGET -->
-    <section id="view-budget" class="view">
-      <div class="budget-total-card">
-        <div>
-          <span class="eyebrow">Budget total</span>
-          <div class="budget-total-figure"><span id="budget-total-real">0</span> / <span id="budget-total-planned">0</span> FCFA</div>
+  <!-- ============ CRÉATION DU FOYER (première utilisation) ============ -->
+  <div id="setupScreen" class="login-screen" style="display:none;">
+    <form id="setupForm" class="login-card wide">
+      <div class="login-brand"><span class="dot"></span>MA FAMILLE</div>
+      <h2>Créons votre foyer</h2>
+      <p class="login-sub">Ces informations personnalisent l'application. Vous pourrez tout modifier plus tard dans Famille et Paramètres.</p>
+      <div class="setup-grid">
+        <div class="field-group">
+          <label class="field-label">Nom du foyer</label>
+          <input type="text" id="stFoyerNom" placeholder="Ex. Famille Kouassi" required>
         </div>
-        <div class="budget-bar-track"><div class="budget-bar-fill" id="budget-total-bar"></div></div>
+        <div class="field-group">
+          <label class="field-label">Votre prénom</label>
+          <input type="text" id="stUserPrenom" placeholder="Votre prénom" required>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Votre nom</label>
+          <input type="text" id="stUserNom" placeholder="Votre nom">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Téléphone (facultatif)</label>
+          <input type="tel" id="stUserTelephone" placeholder="07 00 00 00 00">
+        </div>
+        <div class="field-group">
+          <label class="field-label">👨 Prénom (homme)</label>
+          <input type="text" id="stHommePrenom" placeholder="Ex. Jean">
+        </div>
+        <div class="field-group">
+          <label class="field-label">👩 Prénom (femme)</label>
+          <input type="text" id="stFemmePrenom" placeholder="Ex. Marie">
+        </div>
       </div>
-      <div id="budget-categories"></div>
-      <button id="add-budget-item" class="btn btn-ghost btn-block">+ Ajouter une dépense</button>
-    </section>
-
-    <!-- TÂCHES -->
-    <section id="view-tasks" class="view">
-      <div class="filter-row" id="task-filters">
-        <button class="chip active" data-filter="all">Toutes</button>
-        <button class="chip" data-filter="mine">Moi</button>
-        <button class="chip" data-filter="partner">Elle/Lui</button>
-        <button class="chip" data-filter="done">Terminées</button>
+      <label class="role-filter-toggle" style="font-size:12.5px;">
+        <input type="checkbox" id="stBebeCheck">
+        <span>👶 Un bébé fait partie du foyer</span>
+      </label>
+      <div class="setup-grid" id="stBebeFields" style="display:none;">
+        <div class="field-group">
+          <label class="field-label">Prénom du bébé</label>
+          <input type="text" id="stBebePrenom" placeholder="Ex. Emma">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Date de naissance</label>
+          <input type="date" id="stBebeNaissance">
+        </div>
       </div>
-      <ul class="task-list" id="task-full-list"></ul>
-      <button id="add-task" class="btn btn-ghost btn-block">+ Ajouter une tâche</button>
-    </section>
-
-    <!-- INVITÉS -->
-    <section id="view-guests" class="view">
-      <div class="guest-summary" id="guest-summary"></div>
-      <div class="filter-row" id="guest-filters">
-        <button class="chip active" data-filter="all">Tous</button>
-        <button class="chip" data-filter="VIP">VIP</button>
-        <button class="chip" data-filter="Famille">Famille</button>
-        <button class="chip" data-filter="Amis">Amis</button>
-        <button class="chip" data-filter="Église">Église</button>
-        <button class="chip" data-filter="Comité">Comité</button>
+      <label class="role-filter-toggle" style="font-size:12.5px;">
+        <input type="checkbox" id="stAideCheck">
+        <span>👧 Une aide à la maison fait partie du foyer</span>
+      </label>
+      <div class="setup-grid" id="stAideFields" style="display:none;">
+        <div class="field-group">
+          <label class="field-label">Prénom</label>
+          <input type="text" id="stAidePrenom" placeholder="Ex. Grâce">
+        </div>
+        <div class="field-group">
+          <label class="field-label">Rémunération mensuelle</label>
+          <input type="number" id="stAideRemuneration" placeholder="0" min="0">
+        </div>
       </div>
-      <ul class="guest-list" id="guest-full-list"></ul>
-      <button id="add-guest" class="btn btn-ghost btn-block">+ Ajouter un invité</button>
-    </section>
+      <div class="login-error" id="setupError"></div>
+      <button type="submit" class="cta-inline login-btn" id="setupSubmitBtn">Créer mon foyer</button>
+    </form>
+  </div>
 
-    <!-- COMITÉ -->
-    <section id="view-committee" class="view">
-      <div class="filter-row" id="committee-filters">
-        <button class="chip active" data-filter="all">Tous</button>
-        <button class="chip" data-filter="Marié">Côté Marié</button>
-        <button class="chip" data-filter="Mariée">Côté Mariée</button>
-        <button class="chip" data-filter="Les deux">Les deux</button>
+  <!-- ============ APPLICATION ============ -->
+  <div id="appRoot" style="display:none;">
+    <div class="topbar">
+      <div class="brand"><span class="dot"></span>MA FAMILLE</div>
+      <div class="nav">
+        <div class="tab active" id="navDashboard" onclick="switchView('dashboard')">Tableau de bord</div>
+        <div class="tab" id="navAccounts" onclick="switchView('accounts')">Comptes</div>
+        <div class="tab" id="navTransactions" onclick="switchView('transactions')">Transactions</div>
+        <div class="tab" id="navBudget" onclick="switchView('budget')">Budget</div>
+        <div class="tab" id="navBills" onclick="switchView('bills')">Factures</div>
+        <div class="tab" id="navSavings" onclick="switchView('savings')">Épargne</div>
+        <div class="tab" id="navDebts" onclick="switchView('debts')">Dettes</div>
+        <div class="tab" id="navFamily" onclick="switchView('family')">Famille</div>
+        <div class="tab" id="navForecast" onclick="switchView('forecast')">Prévisions</div>
+        <div class="tab" id="navCalendar" onclick="switchView('calendar')">Calendrier</div>
+        <div class="tab" id="navReports" onclick="switchView('reports')">Rapports</div>
+        <div class="tab" id="navSettings" onclick="switchView('settings')">Paramètres</div>
       </div>
-      <ul class="guest-list" id="committee-full-list"></ul>
-      <button id="add-committee" class="btn btn-ghost btn-block">+ Ajouter un membre</button>
-    </section>
-
-    <!-- RÉGLAGES -->
-    <section id="view-settings" class="view">
-      <h2 class="section-title">Informations du mariage</h2>
-      <label class="field-label">Date du mariage</label>
-      <input id="setting-date" type="date">
-      <label class="field-label">Nombre d'invités visé</label>
-      <input id="setting-guests" type="number">
-      <label class="field-label">Prénom — vous</label>
-      <input id="setting-name-me" type="text" placeholder="ex. Bérenger">
-      <label class="field-label">Prénom — votre partenaire</label>
-      <input id="setting-name-partner" type="text" placeholder="ex. Prénom">
-      <button id="save-settings" class="btn btn-primary btn-block">Enregistrer</button>
-
-      <h2 class="section-title">Export</h2>
-      <button id="export-pdf" class="btn btn-ghost btn-block">📄 Exporter en PDF (budget, invités, comité)</button>
-
-      <div class="danger-zone">
-        <button id="change-code" class="btn btn-ghost btn-block">Changer le code (pour vous deux)</button>
+      <div class="topbar-actions">
+        <span class="sync-badge" id="syncBadge">🔄 connexion…</span>
+        <button class="icon-btn" title="Se déconnecter" onclick="logout()">🔒</button>
       </div>
-    </section>
+    </div>
 
-  </main>
+    <div class="wrap">
 
-  <nav class="tabbar">
-    <button class="tab-btn active" data-view="dashboard"><span class="tab-icon">◆</span>Accueil</button>
-    <button class="tab-btn" data-view="budget"><span class="tab-icon">◈</span>Budget</button>
-    <button class="tab-btn" data-view="tasks"><span class="tab-icon">✓</span>Tâches</button>
-    <button class="tab-btn" data-view="guests"><span class="tab-icon">✦</span>Invités</button>
-    <button class="tab-btn" data-view="committee"><span class="tab-icon">❖</span>Comité</button>
-  </nav>
+      <!-- ============ TABLEAU DE BORD ============ -->
+      <div id="view-dashboard" class="view active">
+        <div class="hero">
+          <div>
+            <h1 id="dashFoyerTitle">Bon retour</h1>
+            <p id="dashSub">Chargement des données…</p>
+          </div>
+          <span class="badge" id="dashDate"></span>
+        </div>
+        <div class="stat-hero">
+          <div class="label">Argent utilisable</div>
+          <div class="value" id="dashTotalDisponible">0 FCFA</div>
+          <div class="sub" id="dashTotalSub">—</div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-box"><div class="label">Revenus (ce mois)</div><div class="value pos" id="dashRevenusMonth">0 FCFA</div></div>
+          <div class="stat-box"><div class="label">Dépenses (ce mois)</div><div class="value neg" id="dashDepensesMonth">0 FCFA</div></div>
+        </div>
+        <div class="grid">
+          <div>
+            <div class="card">
+              <h2>Budget global du mois</h2>
+              <div class="progress-outer"><div class="progress-inner" id="dashBudgetGlobalBar" style="width:0%"></div></div>
+              <div class="progress-label" id="dashBudgetGlobalLabel"><span>0 FCFA dépensé</span><span>0%</span></div>
+            </div>
+            <div class="card">
+              <h2>Prochaines dépenses</h2>
+              <div id="dashUpcomingList"></div>
+            </div>
+            <div class="card">
+              <h2>Aperçu des comptes</h2>
+              <div id="dashAccountsList"></div>
+            </div>
+          </div>
+          <div>
+            <div class="stat-box" style="margin-bottom:16px;">
+              <div class="label">Argent réellement disponible</div>
+              <div class="value" id="dashReelDisponible">0 FCFA</div>
+            </div>
+            <div class="card">
+              <h2>Alertes budget</h2>
+              <div id="dashBudgetAlerts"></div>
+            </div>
+            <div class="card">
+              <h2>Objectifs d'épargne</h2>
+              <div id="dashGoalsList"></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-</div>
+      <!-- ============ COMPTES ============ -->
+      <div id="view-accounts" class="view">
+        <div class="hero"><div><h1>Mes moyens financiers</h1><p>Où se trouve votre argent aujourd'hui.</p></div></div>
+        <div class="stat-row" style="grid-template-columns:repeat(3,1fr);">
+          <div class="stat-box"><div class="label">Total</div><div class="value" id="acctTotalAll">0 FCFA</div></div>
+          <div class="stat-box"><div class="label">Épargne réservée</div><div class="value" id="acctTotalReserved">0 FCFA</div></div>
+          <div class="stat-box"><div class="label">Argent utilisable</div><div class="value" id="acctTotalUsable">0 FCFA</div></div>
+        </div>
+        <div class="card">
+          <h2>Mes comptes</h2>
+          <div id="accountsList"></div>
+        </div>
+        <div class="card">
+          <h2>+ Nouveau moyen financier</h2>
+          <form id="newAccountForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Nom</label><input type="text" id="naName" placeholder="Ex. NSIA Banque" required></div>
+            <div class="field-group"><label class="field-label">Type</label>
+              <select id="naType">
+                <option value="BANK">🏦 Banque</option>
+                <option value="DJAMO">💳 Djamo</option>
+                <option value="ORANGE_MONEY">🟠 Orange Money</option>
+                <option value="WAVE">🔵 Wave</option>
+                <option value="MTN_MONEY">🟡 MTN Money</option>
+                <option value="MOOV_MONEY">🟢 Moov Money</option>
+                <option value="CASH">💵 Espèces</option>
+                <option value="OTHER">📦 Autre</option>
+              </select>
+            </div>
+            <div class="field-group"><label class="field-label">Solde de départ (FCFA)</label><input type="number" id="naBalance" placeholder="0" min="0" value="0"></div>
+            <button type="submit" class="cta-inline form-submit">Ajouter ce compte</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Transfert entre comptes</h2>
+          <p class="form-hint" style="margin:0 0 12px;">Un transfert déplace de l'argent d'un compte à un autre : ce n'est ni une dépense ni un revenu, cela ne fausse donc pas vos statistiques.</p>
+          <form id="transferForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Depuis</label><select id="trFrom"></select></div>
+            <div class="field-group"><label class="field-label">Vers</label><select id="trTo"></select></div>
+            <div class="field-group"><label class="field-label">Montant (FCFA)</label><input type="number" id="trAmount" placeholder="0" min="1" required></div>
+            <div class="field-group"><label class="field-label">Note (facultatif)</label><input type="text" id="trNote" placeholder="Ex. Retrait pour dépenses courantes"></div>
+            <button type="submit" class="cta-inline secondary form-submit">Effectuer le transfert</button>
+          </form>
+        </div>
+      </div>
 
-<!-- Modale générique (ajout/édition) -->
-<div id="modal-backdrop" class="modal-backdrop hidden">
-  <div class="modal" id="modal-content"></div>
-</div>
+      <!-- ============ TRANSACTIONS (revenus / dépenses / récurrences) ============ -->
+      <div id="view-transactions" class="view">
+        <div class="hero"><div><h1>Revenus &amp; dépenses</h1><p>Enregistrez ce qui entre et ce qui sort, et suivez vos récurrences.</p></div></div>
+        <div class="card">
+          <h2>+ Nouveau revenu</h2>
+          <form id="newIncomeForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Montant (FCFA)</label><input type="number" id="inAmount" min="1" required></div>
+            <div class="field-group"><label class="field-label">Date</label><input type="date" id="inDate" required></div>
+            <div class="field-group"><label class="field-label">Personne</label>
+              <select id="inPerson"><option value="homme">👨 Homme</option><option value="femme">👩 Femme</option><option value="famille">👨‍👩‍👧‍👦 Foyer</option><option value="autre">Autre</option></select>
+            </div>
+            <div class="field-group"><label class="field-label">Catégorie</label><select id="inCategory"></select></div>
+            <div class="field-group"><label class="field-label">Vers quel compte</label><select id="inAccount"></select></div>
+            <div class="field-group"><label class="field-label">Note (facultatif)</label><input type="text" id="inNote" placeholder="Ex. Salaire du mois"></div>
+            <label class="role-filter-toggle"><input type="checkbox" id="inRecurrent"><span>Revenu récurrent (chaque mois)</span></label>
+            <button type="submit" class="cta-inline form-submit">Enregistrer le revenu</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>+ Nouvelle dépense</h2>
+          <form id="newExpenseForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Montant (FCFA)</label><input type="number" id="exAmount" min="1" required></div>
+            <div class="field-group"><label class="field-label">Date</label><input type="date" id="exDate" required></div>
+            <div class="field-group"><label class="field-label">Catégorie</label><select id="exCategory"></select></div>
+            <div class="field-group"><label class="field-label">Sous-catégorie (facultatif)</label><input type="text" id="exSubcategory" placeholder="Ex. Couches"></div>
+            <div class="field-group"><label class="field-label">Concerne</label>
+              <select id="exScope"><option value="famille">👨‍👩‍👧‍👦 Famille</option><option value="homme">👨 Homme (personnel)</option><option value="femme">👩 Femme (personnel)</option><option value="bebe">👶 Bébé</option><option value="aide">👧 Aide à la maison</option></select>
+            </div>
+            <div class="field-group"><label class="field-label">Payé avec</label><select id="exAccount"></select></div>
+            <div class="field-group"><label class="field-label">Note (facultatif)</label><input type="text" id="exNote" placeholder="Ex. Marché du week-end"></div>
+            <label class="role-filter-toggle"><input type="checkbox" id="exRecurrent"><span>Dépense récurrente (chaque mois)</span></label>
+            <button type="submit" class="cta-inline form-submit">Enregistrer la dépense</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Récurrences &amp; charges fixes</h2>
+          <p class="form-hint" style="margin:0 0 12px;">Cochez « récurrent(e) » sur un revenu ou une dépense pour qu'il apparaisse ici automatiquement. Chaque mois, cliquez « Enregistrer ce mois » pour créer la transaction réelle.</p>
+          <div id="recurringList"></div>
+        </div>
+        <div class="card">
+          <h2>Historique</h2>
+          <div class="inline-form">
+            <select id="txnFilterType"><option value="all">Tous</option><option value="revenu">Revenus</option><option value="depense">Dépenses</option><option value="transfert">Transferts</option></select>
+            <input type="month" id="txnFilterMonth">
+            <select id="txnFilterCategory"><option value="">Toutes catégories</option></select>
+            <button type="button" class="icon-btn wide" onclick="clearTxnFilters()">Réinitialiser</button>
+          </div>
+          <div id="txnList"></div>
+        </div>
+      </div>
 
-<!-- Zone d'impression (visible uniquement lors de l'export PDF) -->
-<div id="print-area"></div>
+      <!-- ============ BUDGET ============ -->
+      <div id="view-budget" class="view">
+        <div class="hero"><div><h1>Budget mensuel</h1><p>Fixez un montant par catégorie et suivez ce qui reste.</p></div></div>
+        <div class="card">
+          <h2>+ Définir / modifier un budget</h2>
+          <form id="newBudgetForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Catégorie</label><select id="bgCategory"></select></div>
+            <div class="field-group"><label class="field-label">Montant mensuel (FCFA)</label><input type="number" id="bgAmount" min="0" required></div>
+            <button type="submit" class="cta-inline form-submit">Enregistrer</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Suivi du mois — <span id="budgetMonthLabel"></span></h2>
+          <div id="budgetTrackList"></div>
+        </div>
+        <div class="card">
+          <h2>Seuils d'alerte</h2>
+          <form id="thresholdForm" class="inline-form">
+            <div class="field-group"><label class="field-label">Alerte 1 (%)</label><input type="number" id="thr50" min="1" max="99"></div>
+            <div class="field-group"><label class="field-label">Alerte 2 (%)</label><input type="number" id="thr75" min="1" max="99"></div>
+            <div class="field-group"><label class="field-label">Alerte 3 (%)</label><input type="number" id="thr90" min="1" max="99"></div>
+            <button type="submit" class="icon-btn wide">Mettre à jour</button>
+          </form>
+        </div>
+      </div>
 
-<script type="module" src="firebase-config.js"></script>
-<script type="module" src="app.js"></script>
+      <!-- ============ FACTURES ============ -->
+      <div id="view-bills" class="view">
+        <div class="hero"><div><h1>Factures</h1><p>Prévoyez et suivez vos échéances — l'application ne paie rien automatiquement.</p></div></div>
+        <div class="card">
+          <h2>+ Nouvelle facture</h2>
+          <form id="newBillForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Nom</label><input type="text" id="blName" placeholder="Ex. CIE" required></div>
+            <div class="field-group"><label class="field-label">Montant (FCFA)</label><input type="number" id="blAmount" min="1" required></div>
+            <div class="field-group"><label class="field-label">Échéance</label><input type="date" id="blDue" required></div>
+            <div class="field-group"><label class="field-label">Compte prévu (facultatif)</label><select id="blAccount"><option value="">—</option></select></div>
+            <button type="submit" class="cta-inline form-submit">Ajouter la facture</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Toutes les factures</h2>
+          <div id="billsList"></div>
+        </div>
+      </div>
+
+      <!-- ============ ÉPARGNE ============ -->
+      <div id="view-savings" class="view">
+        <div class="hero"><div><h1>Épargne</h1><p>Vos objectifs — cet argent reste compté dans vos comptes mais est mis de côté.</p></div></div>
+        <div class="card">
+          <h2>+ Nouvel objectif</h2>
+          <form id="newGoalForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Nom</label><input type="text" id="gName" placeholder="Ex. Fonds d'urgence" required></div>
+            <div class="field-group"><label class="field-label">Objectif (FCFA)</label><input type="number" id="gTarget" min="1" required></div>
+            <div class="field-group"><label class="field-label">Montant déjà mis de côté</label><input type="number" id="gCurrent" min="0" value="0"></div>
+            <button type="submit" class="cta-inline form-submit">Créer l'objectif</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Mes objectifs</h2>
+          <div id="goalsList"></div>
+        </div>
+      </div>
+
+      <!-- ============ DETTES ============ -->
+      <div id="view-debts" class="view">
+        <div class="hero"><div><h1>Dettes &amp; crédits</h1><p>Suivez ce qu'il reste à rembourser.</p></div></div>
+        <div class="card">
+          <h2>+ Nouvelle dette</h2>
+          <form id="newDebtForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Nom</label><input type="text" id="dName" placeholder="Ex. Crédit véhicule" required></div>
+            <div class="field-group"><label class="field-label">Créancier (facultatif)</label><input type="text" id="dCreancier" placeholder="Ex. Banque Atlantique"></div>
+            <div class="field-group"><label class="field-label">Montant initial (FCFA)</label><input type="number" id="dInitial" min="1" required></div>
+            <div class="field-group"><label class="field-label">Montant restant (FCFA)</label><input type="number" id="dRestant" min="0" required></div>
+            <div class="field-group"><label class="field-label">Mensualité (FCFA)</label><input type="number" id="dMensualite" min="0" required></div>
+            <div class="field-group"><label class="field-label">Taux d'intérêt % (facultatif)</label><input type="number" id="dTaux" min="0" step="0.1"></div>
+            <div class="field-group"><label class="field-label">Date de début</label><input type="date" id="dDateDebut"></div>
+            <div class="field-group"><label class="field-label">Fin prévue</label><input type="date" id="dDateFin"></div>
+            <button type="submit" class="cta-inline form-submit">Ajouter la dette</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Mes dettes</h2>
+          <div id="debtsList"></div>
+        </div>
+      </div>
+
+      <!-- ============ FAMILLE ============ -->
+      <div id="view-family" class="view">
+        <div class="hero"><div><h1>Famille</h1><p>Membres du foyer, bébé et aide à la maison.</p></div></div>
+        <div class="card">
+          <h2>Membres du foyer</h2>
+          <form id="familyForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Nom du foyer</label><input type="text" id="fmFoyerNom" required></div>
+            <div class="field-group"><label class="field-label">👨 Prénom (homme)</label><input type="text" id="fmHommePrenom"></div>
+            <div class="field-group"><label class="field-label">👩 Prénom (femme)</label><input type="text" id="fmFemmePrenom"></div>
+            <label class="role-filter-toggle"><input type="checkbox" id="fmBebeCheck"><span>👶 Un bébé fait partie du foyer</span></label>
+            <div class="setup-grid" id="fmBebeFields" style="display:none;grid-column:1/-1;">
+              <div class="field-group"><label class="field-label">Prénom du bébé</label><input type="text" id="fmBebePrenom"></div>
+              <div class="field-group"><label class="field-label">Date de naissance</label><input type="date" id="fmBebeNaissance"></div>
+            </div>
+            <label class="role-filter-toggle"><input type="checkbox" id="fmAideCheck"><span>👧 Une aide à la maison fait partie du foyer</span></label>
+            <div class="setup-grid" id="fmAideFields" style="display:none;grid-column:1/-1;">
+              <div class="field-group"><label class="field-label">Prénom</label><input type="text" id="fmAidePrenom"></div>
+              <div class="field-group"><label class="field-label">Rôle</label><input type="text" id="fmAideRole" placeholder="Ex. Aide ménagère"></div>
+              <div class="field-group"><label class="field-label">Fréquence</label><input type="text" id="fmAideFrequence" placeholder="Ex. Tous les jours"></div>
+              <div class="field-group"><label class="field-label">Rémunération (FCFA)</label><input type="number" id="fmAideRemuneration" min="0"></div>
+              <div class="field-group"><label class="field-label">Transport (FCFA)</label><input type="number" id="fmAideTransport" min="0"></div>
+              <div class="field-group"><label class="field-label">Autres frais (FCFA)</label><input type="number" id="fmAideAutres" min="0"></div>
+            </div>
+            <button type="submit" class="cta-inline form-submit">Enregistrer</button>
+          </form>
+        </div>
+        <div class="card" id="babyCard" style="display:none;">
+          <h2>👶 Bébé</h2>
+          <div id="babyStats"></div>
+        </div>
+        <div class="card" id="aideCard" style="display:none;">
+          <h2>👧 Aide à la maison</h2>
+          <div id="aideStats"></div>
+        </div>
+      </div>
+
+      <!-- ============ PRÉVISIONS ============ -->
+      <div id="view-forecast" class="view">
+        <div class="hero"><div><h1>Prévisions financières</h1><p>Ce qui arrive dans les prochains jours, à partir de vos comptes, factures et récurrences.</p></div></div>
+        <div class="card">
+          <div class="cal-header">
+            <button class="cal-nav" onclick="shiftForecastMonth(-1)">‹</button>
+            <div class="cal-month" id="forecastMonthLabel">—</div>
+            <button class="cal-nav" onclick="shiftForecastMonth(1)">›</button>
+          </div>
+          <div id="forecastDetail"></div>
+        </div>
+      </div>
+
+      <!-- ============ CALENDRIER ============ -->
+      <div id="view-calendar" class="view">
+        <div class="hero"><div><h1>Calendrier financier</h1><p>Revenus, dépenses, factures et récurrences du mois.</p></div></div>
+        <div class="card">
+          <div class="cal-header">
+            <button class="cal-nav" onclick="shiftCalMonth(-1)">‹</button>
+            <div class="cal-month" id="calMonthLabel">—</div>
+            <button class="cal-nav" onclick="shiftCalMonth(1)">›</button>
+          </div>
+          <div class="cal-weekdays"><span>Lun</span><span>Mar</span><span>Mer</span><span>Jeu</span><span>Ven</span><span>Sam</span><span>Dim</span></div>
+          <div class="cal-grid" id="calGrid"></div>
+        </div>
+        <div class="card" id="calDayCard" style="display:none;">
+          <h2 id="calDayTitle">—</h2>
+          <div id="calDayItems"></div>
+        </div>
+      </div>
+
+      <!-- ============ RAPPORTS ============ -->
+      <div id="view-reports" class="view">
+        <div class="hero"><div><h1>Rapport mensuel</h1><p>Vue d'ensemble et évolution de votre budget.</p></div></div>
+        <div class="card">
+          <div class="cal-header">
+            <button class="cal-nav" onclick="shiftReportMonth(-1)">‹</button>
+            <div class="cal-month" id="reportMonthLabel">—</div>
+            <button class="cal-nav" onclick="shiftReportMonth(1)">›</button>
+          </div>
+          <div class="stat-row" style="grid-template-columns:repeat(4,1fr);">
+            <div class="stat-box"><div class="label">Revenus</div><div class="value pos" id="reportRevenus">0</div></div>
+            <div class="stat-box"><div class="label">Dépenses</div><div class="value neg" id="reportDepenses">0</div></div>
+            <div class="stat-box"><div class="label">Épargne</div><div class="value" id="reportEpargne">0</div></div>
+            <div class="stat-box"><div class="label">Reste</div><div class="value" id="reportReste">0</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Répartition des dépenses</h2>
+          <div id="reportRepartition"></div>
+        </div>
+        <div class="card">
+          <h2>Évolution sur 3 mois par catégorie</h2>
+          <div class="inline-form"><select id="reportComparisonCategory"></select></div>
+          <div id="reportComparisonTable"></div>
+        </div>
+      </div>
+
+      <!-- ============ PARAMÈTRES ============ -->
+      <div id="view-settings" class="view">
+        <div class="hero"><div><h1>Paramètres</h1><p>Profil, catégories personnalisées et sauvegarde.</p></div></div>
+        <div class="card">
+          <h2>Profil</h2>
+          <div id="settingsProfile"></div>
+          <div style="margin-top:14px;"><button class="icon-btn wide" onclick="editProfile()">✎ Modifier mon profil</button></div>
+        </div>
+        <div class="card">
+          <h2>Devise &amp; pays</h2>
+          <div class="settings-row"><div><div class="label">Devise</div><div class="desc">Franc CFA (XOF)</div></div></div>
+          <div class="settings-row"><div><div class="label">Pays</div><div class="desc">Côte d'Ivoire</div></div></div>
+        </div>
+        <div class="card">
+          <h2>Catégories personnalisées</h2>
+          <form id="newCategoryForm" class="inline-form">
+            <input type="text" id="catLabel" placeholder="Nom de la catégorie" required>
+            <select id="catType"><option value="depense">Dépense</option><option value="revenu">Revenu</option></select>
+            <button type="submit" class="icon-btn wide">+ Ajouter</button>
+          </form>
+          <div id="settingsCategoriesList"></div>
+        </div>
+        <div class="card">
+          <h2>Sauvegarde</h2>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="icon-btn wide" onclick="exportData()">⬇️ Exporter mes données (JSON)</button>
+            <label class="icon-btn wide" style="cursor:pointer;">⬆️ Importer une sauvegarde
+              <input type="file" accept="application/json" id="importFile" style="display:none;" onchange="importData(this.files[0])">
+            </label>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Compte</h2>
+          <button class="icon-btn wide" onclick="logout()">🔒 Se déconnecter</button>
+        </div>
+      </div>
+
+      <div class="footnote">MA FAMILLE — gestion privée du foyer, en FCFA. Vos données restent dans votre base personnelle.</div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
 </body>
 </html>
