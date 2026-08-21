@@ -226,7 +226,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
   box-shadow:var(--shadow);width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;
   margin:auto 0;flex:none;
 }
-.login-card.wide{max-width:860px;}
+.login-card.wide{max-width:980px;}
 .login-brand{font-weight:800;font-size:16px;display:flex;align-items:center;gap:8px;margin-bottom:4px;}
 .login-brand .dot{width:10px;height:10px;border-radius:4px;background:var(--grad);}
 .login-card h2{margin:0;font-size:20px;}
@@ -238,6 +238,13 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
 .auth-tab{all:unset;box-sizing:border-box;flex:1;text-align:center;cursor:pointer;padding:9px 6px;border-radius:9px;font-size:12.5px;font-weight:700;color:var(--muted);}
 .auth-tab.active{background:var(--surface);color:var(--terracotta);box-shadow:var(--shadow);}
 .auth-form{display:flex;flex-direction:column;gap:12px;}
+.password-field{position:relative;}
+.password-field input{padding-right:40px;}
+.password-toggle{
+  all:unset;position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;
+  font-size:15px;line-height:1;color:var(--muted);padding:4px;border-radius:6px;
+}
+.password-toggle:hover{color:var(--terracotta);background:var(--surface-soft);}
 .setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 @media (max-width:460px){.setup-grid{grid-template-columns:1fr;}}
 /* ============ SETTINGS ============ */
@@ -262,7 +269,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
 .wizard-nav{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:20px;}
 .radio-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0 4px;}
 @media (max-width:520px){.radio-card-grid{grid-template-columns:1fr;}}
-#personFormsContainer{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px;align-items:start;}
+/* Grille à colonnes fixes (plutôt qu'auto-fit) pour un rangement toujours
+   propre de gauche à droite, sans carte isolée mal alignée sur sa ligne. */
+#personFormsContainer{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start;}
+@media (max-width:900px){#personFormsContainer{grid-template-columns:repeat(2,1fr);}}
 @media (max-width:640px){#personFormsContainer{grid-template-columns:1fr;}}
 .radio-card{
   all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:4px;
