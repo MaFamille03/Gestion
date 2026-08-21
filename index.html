@@ -40,7 +40,9 @@
         <h2>Bon retour</h2>
         <p class="login-sub">Connectez-vous pour retrouver votre foyer.</p>
         <div class="field-group"><label class="field-label">Adresse e-mail</label><input type="email" id="loginEmail" required></div>
-        <div class="field-group"><label class="field-label">Mot de passe</label><input type="password" id="loginPassword" required></div>
+        <div class="field-group"><label class="field-label">Mot de passe</label>
+          <div class="password-field"><input type="password" id="loginPassword" required><button type="button" class="password-toggle" onclick="togglePasswordVisibility('loginPassword', this)">👁</button></div>
+        </div>
         <div class="login-error" id="loginError"></div>
         <button type="submit" class="cta-inline login-btn">Se connecter</button>
       </form>
@@ -48,8 +50,12 @@
         <h2>Créer votre compte</h2>
         <p class="login-sub">Choisissez une adresse et un mot de passe : ils vous serviront à retrouver votre foyer à chaque visite.</p>
         <div class="field-group"><label class="field-label">Adresse e-mail</label><input type="email" id="registerEmail" required></div>
-        <div class="field-group"><label class="field-label">Mot de passe (6 caractères min.)</label><input type="password" id="registerPassword" minlength="6" required></div>
-        <div class="field-group"><label class="field-label">Confirmer le mot de passe</label><input type="password" id="registerPassword2" minlength="6" required></div>
+        <div class="field-group"><label class="field-label">Mot de passe (6 caractères min.)</label>
+          <div class="password-field"><input type="password" id="registerPassword" minlength="6" required><button type="button" class="password-toggle" onclick="togglePasswordVisibility('registerPassword', this)">👁</button></div>
+        </div>
+        <div class="field-group"><label class="field-label">Confirmer le mot de passe</label>
+          <div class="password-field"><input type="password" id="registerPassword2" minlength="6" required><button type="button" class="password-toggle" onclick="togglePasswordVisibility('registerPassword2', this)">👁</button></div>
+        </div>
         <div class="login-error" id="registerError"></div>
         <button type="submit" class="cta-inline login-btn">Créer mon compte</button>
       </form>
@@ -130,6 +136,7 @@
       </div>
       <div class="topbar-actions">
         <span class="sync-badge" id="syncBadge">🔄 connexion…</span>
+        <button type="button" class="icon-btn wide" title="Se déconnecter" onclick="logoutUser()">🚪 Déconnexion</button>
       </div>
     </div>
 
