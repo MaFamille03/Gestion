@@ -36,20 +36,20 @@
         <button type="button" class="auth-tab active" id="authTabLogin" onclick="switchAuthTab('login')">Se connecter</button>
         <button type="button" class="auth-tab" id="authTabRegister" onclick="switchAuthTab('register')">Créer un compte</button>
       </div>
-      <form id="loginForm" class="auth-form">
+      <form id="loginForm" class="auth-form" autocomplete="off">
         <h2>Bon retour</h2>
         <p class="login-sub">Connectez-vous pour retrouver votre foyer.</p>
-        <div class="field-group"><label class="field-label">Adresse e-mail</label><input type="email" id="loginEmail" required></div>
+        <div class="field-group"><label class="field-label">Adresse e-mail</label><input type="email" id="loginEmail" autocomplete="off" required></div>
         <div class="field-group"><label class="field-label">Mot de passe</label>
-          <div class="password-field"><input type="password" id="loginPassword" required><button type="button" class="password-toggle" onclick="togglePasswordVisibility('loginPassword', this)">👁</button></div>
+          <div class="password-field"><input type="password" id="loginPassword" autocomplete="off" required><button type="button" class="password-toggle" onclick="togglePasswordVisibility('loginPassword', this)">👁</button></div>
         </div>
         <div class="login-error" id="loginError"></div>
         <button type="submit" class="cta-inline login-btn">Se connecter</button>
       </form>
-      <form id="registerForm" class="auth-form" style="display:none;">
+      <form id="registerForm" class="auth-form" autocomplete="off" style="display:none;">
         <h2>Créer votre compte</h2>
         <p class="login-sub">Choisissez une adresse et un mot de passe : ils vous serviront à retrouver votre foyer à chaque visite.</p>
-        <div class="field-group"><label class="field-label">Adresse e-mail</label><input type="email" id="registerEmail" required></div>
+        <div class="field-group"><label class="field-label">Adresse e-mail</label><input type="email" id="registerEmail" autocomplete="off" required></div>
         <div class="field-group"><label class="field-label">Mot de passe (6 caractères min.)</label>
           <div class="password-field"><input type="password" id="registerPassword" minlength="6" required><button type="button" class="password-toggle" onclick="togglePasswordVisibility('registerPassword', this)">👁</button></div>
         </div>
@@ -515,6 +515,11 @@
               <input type="file" accept="application/json" id="importFile" style="display:none;" onchange="importData(this.files[0])">
             </label>
           </div>
+        </div>
+        <div class="card danger-zone">
+          <h2>Zone dangereuse</h2>
+          <div class="alert red"><span>⚠️</span><div><b>Supprimer mon compte</b><p>Supprime définitivement votre compte de connexion et toutes les données de votre foyer (comptes, transactions, personnes, budgets…) dans Firebase. Cette action est irréversible — pensez à exporter une sauvegarde avant si besoin.</p></div></div>
+          <button class="icon-btn wide danger" onclick="openDeleteAccountModal()">🗑 Supprimer définitivement mon compte</button>
         </div>
         <div class="card">
           <h2>Compte</h2>
