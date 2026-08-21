@@ -4,6 +4,8 @@
    de données (Firestore), aucune connexion directe aux banques
    ou portefeuilles mobiles — vous saisissez vous-même vos soldes
    et mouvements.
+   Le foyer est un objet dynamique : de 1 à N personnes, sans
+   composition prédéfinie (voir MODÈLE DE DONNÉES ci-dessous).
    ============================================================ */
 
 /* ============ FIREBASE ============
@@ -46,10 +48,7 @@ const ACCOUNT_TYPES = [
 const EXPENSE_CATEGORIES = [
   {id:'maison', label:'Maison', icon:'🏠'},
   {id:'alimentation', label:'Alimentation', icon:'🍚'},
-  {id:'bebe', label:'Bébé', icon:'👶'},
-  {id:'homme', label:'Homme (personnel)', icon:'👨'},
-  {id:'femme', label:'Femme (personnel)', icon:'👩'},
-  {id:'aide', label:'Aide à la maison', icon:'👧'},
+  {id:'personnel', label:'Dépense personnelle', icon:'👤'},
   {id:'transport', label:'Transport', icon:'🚗'},
   {id:'sante', label:'Santé', icon:'🏥'},
   {id:'education', label:'Éducation', icon:'🎓'},
@@ -69,6 +68,20 @@ const INCOME_CATEGORIES = [
   {id:'investissement', label:'Investissement', icon:'📈'},
   {id:'autre', label:'Autre', icon:'📦'},
 ];
+/* Liens possibles entre une personne et le titulaire du compte ("vous").
+   'soi' est réservé au titulaire lui-même (une seule occurrence par foyer). */
+const RELATIONS = [
+  {id:'soi', label:'Vous-même', icon:'🙂'},
+  {id:'conjoint', label:'Conjoint(e)', icon:'💑'},
+  {id:'enfant', label:'Enfant', icon:'🧒'},
+  {id:'parent', label:'Parent', icon:'🧓'},
+  {id:'aide_domestique', label:'Aide à la maison', icon:'🧹'},
+  {id:'colocataire', label:'Colocataire', icon:'🏠'},
+  {id:'autre_famille', label:'Autre membre de la famille', icon:'👪'},
+  {id:'autre', label:'Autre', icon:'👤'},
+];
+function relationInfo(id){ return RELATIONS.find(r => r.id === id) || RELATIONS[RELATIONS.length-1]; }
+const SITUATION_LABELS = {seul:'Je vis seul(e)', couple:'En couple', famille:'Famille avec enfant(s)', autre:'Autre configuration'};
 const DEFAULT_THRESHOLDS = [50, 75, 90];
 const LOCAL_KEY = 'mafamille_local_v1';
 
@@ -147,36 +160,54 @@ function showToast(message){
     setTimeout(() => toast.remove(), 400);
   }, 3200);
 }
+function initials(name){
+  const c = (name||'').trim().slice(0,1).toUpperCase();
+  return c || '?';
+}
+function ageFromBirthdate(dateStr){
+  if(!dateStr) return '—';
+  const birth = new Date(dateStr + 'T00:00:00');
+  const now = new Date();
+  let months = (now.getFullYear()-birth.getFullYear())*12 + (now.getMonth()-birth.getMonth());
+  if(now.getDate() < birth.getDate()) months--;
+  if(months < 1){
+    const days = Math.max(0, Math.round((now - birth) / 86400000));
+    return `${days} jour${days>1?'s':''}`;
+  }
+  if(months < 24) return `${months} mois`;
+  return `${Math.floor(months/12)} an${Math.floor(months/12)>1?'s':''}`;
+}
 
-/* ============ MODÈLE DE DONNÉES ============
-   Un seul document Firestore par utilisateur : collection 'foyers', id = uid.
+/* ============ MODÈLE DE DONNÉES « FOYER DYNAMIQUE » ============
+   Un seul document Firestore : collection 'foyers', id fixe = FOYER_DOC_ID.
    {
-     profil: { nom, prenom, telephone },
-     foyer: { nom },
-     membres: { homme:{prenom}, femme:{prenom},
-                bebe:{actif, prenom, naissance},
-                aide:{actif, prenom, role, frequence, remuneration, transport, autres} },
+     foyer: { nom, situationLogement:'seul'|'couple'|'famille'|'autre' },
+     personnes: [ {
+        id, prenom, nom, relation: voir RELATIONS, dateNaissance, telephone,
+        aCharge:bool,          // personne financièrement à charge du foyer
+        contribution:bool,     // personne qui contribue aux revenus du foyer
+        role, frequence, remuneration, transport, autres,  // utilisés seulement si relation === 'aide_domestique'
+        presente:bool,         // false = a quitté le foyer — JAMAIS supprimée, seulement désactivée,
+        dateArrivee, dateDepart                              // pour préserver l'historique financier
+     } ],
      accounts: [ {id,name,type,balance} ],
      transactions: [ {id,type:'revenu'|'depense'|'transfert'|'epargne_ajout'|'epargne_retrait',
-                       amount,date,category,subcategory,person,scope,accountId,toAccountId,note,recurringId} ],
-     recurring: [ {id,label,type:'revenu'|'depense',amount,category,scope,accountId,day,fixedCharge,lastRecordedMonth} ],
+                       amount,date,category,subcategory,personId,accountId,toAccountId,note,recurringId} ],
+     recurring: [ {id,label,type:'revenu'|'depense',amount,category,personId,accountId,day,fixedCharge,lastRecordedMonth} ],
      budgets: { [categoryId]: montant },
      thresholds: [50,75,90],
      bills: [ {id,name,amount,due,accountId,paid,paidTxnId} ],
      savingsGoals: [ {id,name,target,current} ],
      debts: [ {id,name,creancier,initial,restant,mensualite,taux,dateDebut,dateFin} ],
      categories: [ {id,label,type,icon,custom:true} ]
-   } */
+   }
+   personId sur une transaction/récurrence vaut soit l'id d'une personne du
+   foyer, soit la valeur spéciale 'foyer' (dépense/revenu commun, non attribué
+   à une personne en particulier). */
 function defaultFoyerData(){
   return {
-    profil: {nom:'', prenom:'', telephone:''},
-    foyer: {nom:''},
-    membres: {
-      homme: {prenom:''},
-      femme: {prenom:''},
-      bebe: {actif:false, prenom:'', naissance:''},
-      aide: {actif:false, prenom:'', role:'', frequence:'', remuneration:0, transport:0, autres:0},
-    },
+    foyer: {nom:'', situationLogement:''},
+    personnes: [],
     accounts: [],
     transactions: [],
     recurring: [],
@@ -187,6 +218,55 @@ function defaultFoyerData(){
     debts: [],
     categories: [],
   };
+}
+/* Migration silencieuse depuis l'ancien modèle fixe (Homme/Femme/Bébé/Aide) :
+   si un document existant utilise encore "membres"/"profil", on le convertit
+   en "personnes" dynamiques sans rien perdre — aucune donnée saisie avant ce
+   changement ne doit être perdue. */
+function migrateLegacyIfNeeded(shared){
+  if(!shared || Array.isArray(shared.personnes)) return shared;
+  if(!shared.membres) return shared;
+  const m = shared.membres;
+  const map = {};
+  const personnes = [];
+  if(m.homme && m.homme.prenom){
+    const id = genId('p');
+    map.homme = id;
+    personnes.push({id, prenom:m.homme.prenom, nom:'', relation:'soi', dateNaissance:'', telephone:(shared.profil&&shared.profil.telephone)||'', aCharge:false, contribution:true, role:'',frequence:'',remuneration:0,transport:0,autres:0, presente:true, dateArrivee:'', dateDepart:null});
+  }
+  if(m.femme && m.femme.prenom){
+    const id = genId('p');
+    map.femme = id;
+    personnes.push({id, prenom:m.femme.prenom, nom:'', relation: personnes.length?'conjoint':'soi', dateNaissance:'', telephone:'', aCharge:false, contribution:true, role:'',frequence:'',remuneration:0,transport:0,autres:0, presente:true, dateArrivee:'', dateDepart:null});
+  }
+  if(m.bebe && m.bebe.actif){
+    const id = genId('p');
+    map.bebe = id;
+    personnes.push({id, prenom:m.bebe.prenom||'Bébé', nom:'', relation:'enfant', dateNaissance:m.bebe.naissance||'', telephone:'', aCharge:true, contribution:false, role:'',frequence:'',remuneration:0,transport:0,autres:0, presente:true, dateArrivee:'', dateDepart:null});
+  }
+  if(m.aide && m.aide.actif){
+    const id = genId('p');
+    map.aide = id;
+    personnes.push({id, prenom:m.aide.prenom||'Aide à la maison', nom:'', relation:'aide_domestique', dateNaissance:'', telephone:'', aCharge:false, contribution:false, role:m.aide.role||'', frequence:m.aide.frequence||'', remuneration:m.aide.remuneration||0, transport:m.aide.transport||0, autres:m.aide.autres||0, presente:true, dateArrivee:'', dateDepart:null});
+  }
+  map.famille = 'foyer';
+  const remap = (val) => (val && map[val]) ? map[val] : 'foyer';
+  (shared.transactions||[]).forEach(t => {
+    t.personId = t.person ? remap(t.person) : (t.scope ? remap(t.scope) : 'foyer');
+    if(['bebe','homme','femme','aide'].includes(t.category)) t.category = 'personnel';
+    delete t.person; delete t.scope;
+  });
+  (shared.recurring||[]).forEach(r => {
+    r.personId = r.scope ? remap(r.scope) : 'foyer';
+    if(['bebe','homme','femme','aide'].includes(r.category)) r.category = 'personnel';
+    delete r.scope;
+  });
+  shared.personnes = personnes;
+  shared.foyer = shared.foyer || {nom:''};
+  shared.foyer.situationLogement = shared.foyer.situationLogement || '';
+  delete shared.membres;
+  delete shared.profil;
+  return shared;
 }
 let DATA = defaultFoyerData();
 let dataReady = false;
@@ -233,61 +313,147 @@ function hideAllGateScreens(){
 function showSetupScreen(){
   hideAllGateScreens();
   document.getElementById('setupScreen').style.display = 'flex';
+  initWizard();
 }
 function showAppRoot(){
   hideAllGateScreens();
   document.getElementById('appRoot').style.display = 'block';
 }
 
-/* ============ CRÉATION DU FOYER (première utilisation) ============ */
-document.getElementById('stBebeCheck').addEventListener('change', function(){
-  document.getElementById('stBebeFields').style.display = this.checked ? 'grid' : 'none';
-});
-document.getElementById('stAideCheck').addEventListener('change', function(){
-  document.getElementById('stAideFields').style.display = this.checked ? 'grid' : 'none';
-});
-function handleSetupSubmit(e){
-  e.preventDefault();
-  const errEl = document.getElementById('setupError');
-  errEl.textContent = '';
-  const foyerNom = document.getElementById('stFoyerNom').value.trim();
-  const userPrenom = document.getElementById('stUserPrenom').value.trim();
-  if(!foyerNom || !userPrenom){
-    errEl.textContent = 'Le nom du foyer et votre prénom sont obligatoires.';
-    return;
+/* ============ QUESTIONNAIRE ADAPTATIF (création du foyer) ============
+   Le nombre d'étapes s'adapte à la situation choisie : une personne seule
+   saute directement l'étape "combien de personnes" (elle vaut 1). */
+const WIZ_TITLES = {1:'Votre foyer', 2:'Composition', 3:'Les personnes du foyer', 4:'Vérification'};
+let wizard = { stepOrder:[1,2,3,4], idx:0, foyerNom:'', moiPrenom:'', situation:'', count:1, personnes:[] };
+
+function wizardCurrentStep(){ return wizard.stepOrder[wizard.idx]; }
+function renderWizardProgress(){
+  const el = document.getElementById('wizardProgress');
+  if(!el) return;
+  el.innerHTML = wizard.stepOrder.map((s,i) => {
+    const cls = i < wizard.idx ? 'done' : (i === wizard.idx ? 'current' : '');
+    return `<div class="seg ${cls}"><div class="fill"></div></div>`;
+  }).join('');
+}
+function showWizardStep(){
+  [1,2,3,4].forEach(n => {
+    const el = document.getElementById('wizStep'+n);
+    if(el) el.classList.toggle('active', n === wizardCurrentStep());
+  });
+  renderWizardProgress();
+  const activeEl = document.getElementById('wizStep'+wizardCurrentStep());
+  const labelEl = activeEl ? activeEl.querySelector('.wizard-steplabel') : null;
+  if(labelEl) labelEl.textContent = `Étape ${wizard.idx+1} sur ${wizard.stepOrder.length} — ${WIZ_TITLES[wizardCurrentStep()]}`;
+  document.getElementById('wizPrevBtn').style.visibility = wizard.idx === 0 ? 'hidden' : 'visible';
+  document.getElementById('wizNextBtn').textContent = wizardCurrentStep() === 4 ? 'Créer mon foyer 🎉' : 'Suivant ›';
+  document.getElementById('setupError').textContent = '';
+}
+function initWizard(){
+  wizard = { stepOrder:[1,2,3,4], idx:0, foyerNom:'', moiPrenom:'', situation:'', count:1, personnes:[] };
+  document.getElementById('stFoyerNom').value = '';
+  document.getElementById('stMoiPrenom').value = '';
+  document.querySelectorAll('#situationGrid .radio-card').forEach(b => b.classList.remove('selected'));
+  document.getElementById('stCountValue').textContent = '1';
+  document.getElementById('stCountMinus').disabled = true;
+  document.getElementById('personFormsContainer').innerHTML = '';
+  document.getElementById('wizardRecap').innerHTML = '';
+  showWizardStep();
+}
+function buildPersonForms(){
+  const container = document.getElementById('personFormsContainer');
+  let html = '';
+  for(let i = 0; i < wizard.count; i++){
+    if(i === 0){
+      html += `
+        <div class="person-form-card" data-idx="0">
+          <div class="pf-head"><span class="pf-badge">1</span> Vous-même</div>
+          <div class="form-grid" style="background:transparent;border:none;padding:0;">
+            <div class="field-group"><label class="field-label">Prénom</label><input type="text" class="pf-prenom" value="${escapeHtml(wizard.moiPrenom)}" readonly></div>
+            <div class="field-group"><label class="field-label">Date de naissance (facultatif)</label><input type="date" class="pf-naissance"></div>
+          </div>
+        </div>`;
+    } else {
+      html += `
+        <div class="person-form-card" data-idx="${i}">
+          <div class="pf-head"><span class="pf-badge">${i+1}</span> Personne ${i+1}</div>
+          <div class="form-grid" style="background:transparent;border:none;padding:0;">
+            <div class="field-group"><label class="field-label">Prénom</label><input type="text" class="pf-prenom" placeholder="Prénom" required></div>
+            <div class="field-group"><label class="field-label">Lien avec vous</label>
+              <select class="pf-relation">${RELATIONS.filter(r=>r.id!=='soi').map(r=>`<option value="${r.id}">${r.icon} ${r.label}</option>`).join('')}</select>
+            </div>
+            <div class="field-group"><label class="field-label">Date de naissance (facultatif)</label><input type="date" class="pf-naissance"></div>
+          </div>
+          <label class="role-filter-toggle"><input type="checkbox" class="pf-acharge"><span>À charge financièrement</span></label>
+          <label class="role-filter-toggle"><input type="checkbox" class="pf-contribution"><span>Contribue aux revenus du foyer</span></label>
+          <div class="setup-grid pf-aide-fields" style="display:none;grid-column:1/-1;margin-top:8px;">
+            <div class="field-group"><label class="field-label">Rôle</label><input type="text" class="pf-role" placeholder="Ex. Aide ménagère"></div>
+            <div class="field-group"><label class="field-label">Fréquence</label><input type="text" class="pf-frequence" placeholder="Ex. Tous les jours"></div>
+            <div class="field-group"><label class="field-label">Rémunération (FCFA)</label><input type="number" class="pf-remuneration" min="0"></div>
+            <div class="field-group"><label class="field-label">Transport (FCFA)</label><input type="number" class="pf-transport" min="0"></div>
+            <div class="field-group"><label class="field-label">Autres frais (FCFA)</label><input type="number" class="pf-autres" min="0"></div>
+          </div>
+        </div>`;
+    }
   }
+  container.innerHTML = html;
+  container.querySelectorAll('.pf-relation').forEach(sel => {
+    sel.addEventListener('change', function(){
+      const aideFields = this.closest('.person-form-card').querySelector('.pf-aide-fields');
+      aideFields.style.display = this.value === 'aide_domestique' ? 'grid' : 'none';
+    });
+  });
+}
+function collectPersonForms(){
+  const cards = document.querySelectorAll('#personFormsContainer .person-form-card');
+  const list = [];
+  let ok = true;
+  cards.forEach((card, i) => {
+    if(i === 0){
+      const naissance = card.querySelector('.pf-naissance').value;
+      list.push({id: genId('p'), prenom: wizard.moiPrenom, nom:'', relation:'soi', dateNaissance: naissance, telephone:'', aCharge:false, contribution:true, role:'',frequence:'',remuneration:0,transport:0,autres:0, presente:true, dateArrivee: todayStr(), dateDepart:null});
+      return;
+    }
+    const prenom = card.querySelector('.pf-prenom').value.trim();
+    if(!prenom){ ok = false; return; }
+    const relation = card.querySelector('.pf-relation').value;
+    const isAide = relation === 'aide_domestique';
+    list.push({
+      id: genId('p'), prenom, nom:'', relation,
+      dateNaissance: card.querySelector('.pf-naissance').value,
+      telephone:'',
+      aCharge: card.querySelector('.pf-acharge').checked,
+      contribution: card.querySelector('.pf-contribution').checked,
+      role: isAide ? card.querySelector('.pf-role').value.trim() : '',
+      frequence: isAide ? card.querySelector('.pf-frequence').value.trim() : '',
+      remuneration: isAide ? (Number(card.querySelector('.pf-remuneration').value)||0) : 0,
+      transport: isAide ? (Number(card.querySelector('.pf-transport').value)||0) : 0,
+      autres: isAide ? (Number(card.querySelector('.pf-autres').value)||0) : 0,
+      presente:true, dateArrivee: todayStr(), dateDepart:null,
+    });
+  });
+  return ok ? list : null;
+}
+function renderRecap(){
+  const el = document.getElementById('wizardRecap');
+  let html = `<div class="budget-block"><div class="budget-block-top"><span class="name">Nom du foyer</span><span class="nums">${escapeHtml(wizard.foyerNom)}</span></div></div>`;
+  html += `<div class="budget-block"><div class="budget-block-top"><span class="name">Situation</span><span class="nums">${SITUATION_LABELS[wizard.situation]||wizard.situation}</span></div></div>`;
+  html += wizard.personnes.map(p => {
+    const rel = relationInfo(p.relation);
+    return `<div class="person-card"><div class="person-avatar">${initials(p.prenom)}</div><div class="person-body"><div class="person-name">${escapeHtml(p.prenom)}</div><div class="person-rel">${rel.icon} ${rel.label}</div><div class="person-tags">${p.aCharge?'<span class="tag orange">À charge</span>':''}${p.contribution?'<span class="tag green">Contribue</span>':''}</div></div></div>`;
+  }).join('');
+  el.innerHTML = html;
+}
+function submitWizard(){
+  const errEl = document.getElementById('setupError');
   const data = defaultFoyerData();
-  data.profil = {
-    nom: document.getElementById('stUserNom').value.trim(),
-    prenom: userPrenom,
-    telephone: document.getElementById('stUserTelephone').value.trim(),
-  };
-  data.foyer = {nom: foyerNom};
-  data.membres.homme.prenom = document.getElementById('stHommePrenom').value.trim();
-  data.membres.femme.prenom = document.getElementById('stFemmePrenom').value.trim();
-  const bebeActif = document.getElementById('stBebeCheck').checked;
-  data.membres.bebe = {
-    actif: bebeActif,
-    prenom: document.getElementById('stBebePrenom').value.trim(),
-    naissance: document.getElementById('stBebeNaissance').value,
-  };
-  const aideActif = document.getElementById('stAideCheck').checked;
-  data.membres.aide = {
-    actif: aideActif,
-    prenom: document.getElementById('stAidePrenom').value.trim(),
-    role: '', frequence: '',
-    remuneration: Number(document.getElementById('stAideRemuneration').value) || 0,
-    transport: 0, autres: 0,
-  };
+  data.foyer = {nom: wizard.foyerNom, situationLogement: wizard.situation};
+  data.personnes = wizard.personnes;
   data.accounts.push({id: genId('acc'), name:'Espèces', type:'CASH', balance:0});
   DATA = data;
   setSyncBadge('saving');
   DOC_REF.set(DATA).then(() => {
-    foyerExists = true;
-    dataReady = true;
-    showAppRoot();
-    switchView('dashboard');
-    renderAll();
+    foyerExists = true; dataReady = true;
+    showAppRoot(); switchView('dashboard'); renderAll();
     showToast('Bienvenue ! Votre foyer est prêt 🎉');
   }).catch(err => {
     console.error('Erreur de création du foyer :', err);
@@ -295,6 +461,61 @@ function handleSetupSubmit(e){
     setSyncBadge('err');
   });
 }
+document.getElementById('situationGrid').addEventListener('click', e => {
+  const btn = e.target.closest('.radio-card');
+  if(!btn) return;
+  document.querySelectorAll('#situationGrid .radio-card').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  wizard.situation = btn.dataset.val;
+});
+document.getElementById('stCountMinus').addEventListener('click', () => {
+  wizard.count = Math.max(1, wizard.count - 1);
+  document.getElementById('stCountValue').textContent = wizard.count;
+  document.getElementById('stCountMinus').disabled = wizard.count <= 1;
+});
+document.getElementById('stCountPlus').addEventListener('click', () => {
+  wizard.count = Math.min(12, wizard.count + 1);
+  document.getElementById('stCountValue').textContent = wizard.count;
+  document.getElementById('stCountMinus').disabled = wizard.count <= 1;
+});
+document.getElementById('wizPrevBtn').addEventListener('click', () => {
+  if(wizard.idx > 0){ wizard.idx--; showWizardStep(); }
+});
+document.getElementById('wizNextBtn').addEventListener('click', () => {
+  const errEl = document.getElementById('setupError');
+  errEl.textContent = '';
+  const step = wizardCurrentStep();
+  if(step === 1){
+    wizard.foyerNom = document.getElementById('stFoyerNom').value.trim();
+    wizard.moiPrenom = document.getElementById('stMoiPrenom').value.trim();
+    if(!wizard.foyerNom || !wizard.moiPrenom || !wizard.situation){
+      errEl.textContent = 'Merci de compléter le nom du foyer, votre prénom, et de choisir une situation.';
+      return;
+    }
+    if(wizard.situation === 'seul'){
+      wizard.count = 1;
+      wizard.stepOrder = [1,3,4];
+    } else {
+      wizard.stepOrder = [1,2,3,4];
+    }
+    wizard.idx = 1;
+    if(wizard.situation === 'seul') buildPersonForms();
+    showWizardStep();
+  } else if(step === 2){
+    wizard.idx++;
+    buildPersonForms();
+    showWizardStep();
+  } else if(step === 3){
+    const list = collectPersonForms();
+    if(!list){ errEl.textContent = 'Merci de renseigner le prénom de chaque personne.'; return; }
+    wizard.personnes = list;
+    wizard.idx++;
+    renderRecap();
+    showWizardStep();
+  } else if(step === 4){
+    submitWizard();
+  }
+});
 
 /* ============ SYNCHRONISATION ============
    Pas d'authentification : l'application se connecte directement au document
@@ -302,12 +523,11 @@ function handleSetupSubmit(e){
    uniquement sur la confidentialité du lien du site — voir la carte "Accès"
    dans Paramètres. */
 function startSync(){
-  document.getElementById('setupForm').addEventListener('submit', handleSetupSubmit);
   DOC_REF.onSnapshot(snap => {
     if(snap.exists){
-      const shared = snap.data();
+      let shared = migrateLegacyIfNeeded(snap.data());
       DATA = Object.assign(defaultFoyerData(), shared);
-      DATA.membres = Object.assign(defaultFoyerData().membres, shared.membres || {});
+      if(!Array.isArray(DATA.personnes)) DATA.personnes = [];
       foyerExists = true;
       dataReady = true;
       setSyncBadge('ok');
@@ -337,23 +557,30 @@ function startSync(){
   });
 }
 
-/* ============ NAVIGATION ============ */
-const VIEWS = ['dashboard','accounts','transactions','budget','bills','savings','debts','family','forecast','calendar','reports','settings'];
+/* ============ NAVIGATION ============
+   5 onglets principaux ; tout le reste vit derrière l'onglet "Plus" (menu en
+   grille) pour ne pas surcharger l'interface quelle que soit la taille du foyer. */
+const MAIN_VIEWS = ['dashboard','accounts','transactions','budget','plus'];
+const PLUS_CHILDREN = ['bills','savings','debts','foyer','forecast','calendar','reports','settings'];
+const VIEWS = MAIN_VIEWS.concat(PLUS_CHILDREN);
 function switchView(view){
   if(!VIEWS.includes(view)) view = 'dashboard';
   currentView = view;
   saveLocalPrefs();
-  VIEWS.forEach(v => {
+  const navActive = MAIN_VIEWS.includes(view) ? view : 'plus';
+  MAIN_VIEWS.forEach(v => {
     const nav = document.getElementById('nav' + v.charAt(0).toUpperCase() + v.slice(1));
+    if(nav) nav.classList.toggle('active', v === navActive);
+  });
+  VIEWS.forEach(v => {
     const el = document.getElementById('view-' + v);
-    if(nav) nav.classList.toggle('active', v === view);
     if(el) el.classList.toggle('active', v === view);
   });
   if(!dataReady) return;
   if(view === 'calendar') renderCalendar();
   if(view === 'forecast') renderForecast();
   if(view === 'reports') renderReports();
-  if(view === 'family') renderFamily();
+  if(view === 'foyer') renderFoyer();
   if(view === 'settings') renderSettings();
 }
 window.switchView = switchView;
@@ -362,6 +589,7 @@ function renderAll(){
   if(!dataReady) return;
   fillAllAccountSelects();
   fillAllCategorySelects();
+  fillAllPersonSelects();
   renderDashboard();
   renderAccounts();
   renderRecurring();
@@ -373,7 +601,7 @@ function renderAll(){
   if(currentView === 'calendar') renderCalendar();
   if(currentView === 'forecast') renderForecast();
   if(currentView === 'reports') renderReports();
-  if(currentView === 'family') renderFamily();
+  if(currentView === 'foyer') renderFoyer();
   if(currentView === 'settings') renderSettings();
 }
 
@@ -422,6 +650,205 @@ function fillAllCategorySelects(){
     if(prev && allExpenseCategories().some(c=>c.id===prev)) cmpCat.value = prev;
   }
 }
+
+/* ============ PERSONNES DU FOYER ============ */
+function personById(id){ return (DATA.personnes||[]).find(p => p.id === id); }
+function activePersonnes(){ return (DATA.personnes||[]).filter(p => p.presente !== false); }
+function inactivePersonnes(){ return (DATA.personnes||[]).filter(p => p.presente === false); }
+function soiPersonne(){ return (DATA.personnes||[]).find(p => p.relation === 'soi') || activePersonnes()[0] || null; }
+function personLabel(id){
+  if(!id || id === 'foyer') return 'Foyer';
+  const p = personById(id);
+  return p ? p.prenom : 'Foyer';
+}
+function fillPersonSelect(selectEl, keepValue){
+  if(!selectEl) return;
+  const prev = keepValue ? selectEl.value : null;
+  const active = activePersonnes();
+  let html = `<option value="foyer">👨‍👩‍👧‍👦 Foyer (commun)</option>`;
+  html += active.map(p => {
+    const rel = relationInfo(p.relation);
+    return `<option value="${p.id}">${rel.icon} ${escapeHtml(p.prenom)}</option>`;
+  }).join('');
+  selectEl.innerHTML = html;
+  if(prev && (prev === 'foyer' || active.some(p => p.id === prev))) selectEl.value = prev;
+}
+function fillAllPersonSelects(){
+  fillPersonSelect(document.getElementById('inPersonId'), true);
+  fillPersonSelect(document.getElementById('exPersonId'), true);
+}
+function personMonthlyPersonalExpense(personId, key){
+  return sumAmount((DATA.transactions||[]).filter(t => t.type === 'depense' && t.personId === personId && monthKeyOf(t.date) === key));
+}
+function renderPersonCard(p){
+  const rel = relationInfo(p.relation);
+  const inactive = p.presente === false;
+  const key = currentMonthKey();
+  const monthExp = personMonthlyPersonalExpense(p.id, key);
+  let statsHtml = `<div class="ps"><div class="k">Dépenses perso ce mois</div><div class="v">${formatFCFA(monthExp)}</div></div>`;
+  if(p.dateNaissance) statsHtml += `<div class="ps"><div class="k">Âge</div><div class="v">${ageFromBirthdate(p.dateNaissance)}</div></div>`;
+  if(p.relation === 'aide_domestique'){
+    const total = (Number(p.remuneration)||0) + (Number(p.transport)||0) + (Number(p.autres)||0);
+    statsHtml += `<div class="ps"><div class="k">Coût mensuel prévu</div><div class="v">${formatFCFA(total)}</div></div>`;
+  }
+  let actions;
+  if(inactive){
+    actions = `<button class="icon-btn" title="Faire revenir" onclick="reactivatePerson('${p.id}')">↩</button>`;
+  } else {
+    actions = `<button class="icon-btn" title="Modifier" onclick="editPerson('${p.id}')">✎</button>`;
+    if(p.relation !== 'soi') actions += `<button class="icon-btn danger" title="Retirer du foyer" onclick="deactivatePerson('${p.id}')">🚪</button>`;
+  }
+  const dateDepartStr = (inactive && p.dateDepart) ? ' · Parti(e) le ' + new Date(p.dateDepart+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'}) : '';
+  return `
+    <div class="person-card ${inactive?'inactive':''}">
+      <div class="person-avatar">${initials(p.prenom)}</div>
+      <div class="person-body">
+        <div class="person-name">${escapeHtml(p.prenom)}</div>
+        <div class="person-rel">${rel.icon} ${rel.label}${dateDepartStr}</div>
+        <div class="person-tags">${p.aCharge?'<span class="tag orange">À charge</span>':''}${p.contribution?'<span class="tag green">Contribue aux revenus</span>':''}</div>
+        <div class="person-stats">${statsHtml}</div>
+      </div>
+      <div class="person-actions">${actions}</div>
+    </div>`;
+}
+function renderFoyer(){
+  document.getElementById('fyNom').value = DATA.foyer.nom || '';
+  document.getElementById('fySituation').value = DATA.foyer.situationLogement || 'famille';
+  document.getElementById('foyerTitle').textContent = DATA.foyer.nom || 'Foyer';
+  const active = activePersonnes();
+  document.getElementById('personnesList').innerHTML = active.length ? active.map(renderPersonCard).join('') : `<div class="empty">Aucune personne enregistrée.</div>`;
+  const inactive = inactivePersonnes();
+  const pastCard = document.getElementById('pastPersonsCard');
+  if(inactive.length){
+    pastCard.style.display = 'block';
+    document.getElementById('pastPersonnesList').innerHTML = inactive.map(renderPersonCard).join('');
+  } else {
+    pastCard.style.display = 'none';
+  }
+}
+document.getElementById('foyerInfoForm').addEventListener('submit', e => {
+  e.preventDefault();
+  DATA.foyer.nom = document.getElementById('fyNom').value.trim();
+  DATA.foyer.situationLogement = document.getElementById('fySituation').value;
+  saveData();
+  renderAll();
+  renderFoyer();
+  showToast('Informations du foyer mises à jour ✅');
+});
+function openAddPerson(){
+  const wrap = document.getElementById('addPersonFormWrap');
+  wrap.style.display = 'block';
+  wrap.innerHTML = `
+    <div class="person-form-card">
+      <div class="pf-head"><span class="pf-badge">＋</span> Nouvelle personne</div>
+      <div class="form-grid" style="background:transparent;border:none;padding:0;">
+        <div class="field-group"><label class="field-label">Prénom</label><input type="text" id="apPrenom" required></div>
+        <div class="field-group"><label class="field-label">Lien avec vous</label>
+          <select id="apRelation">${RELATIONS.filter(r=>r.id!=='soi').map(r=>`<option value="${r.id}">${r.icon} ${r.label}</option>`).join('')}</select>
+        </div>
+        <div class="field-group"><label class="field-label">Date de naissance (facultatif)</label><input type="date" id="apNaissance"></div>
+      </div>
+      <label class="role-filter-toggle"><input type="checkbox" id="apACharge"><span>À charge financièrement</span></label>
+      <label class="role-filter-toggle"><input type="checkbox" id="apContribution"><span>Contribue aux revenus du foyer</span></label>
+      <div class="setup-grid" id="apAideFields" style="display:none;grid-column:1/-1;margin-top:8px;">
+        <div class="field-group"><label class="field-label">Rôle</label><input type="text" id="apRole" placeholder="Ex. Aide ménagère"></div>
+        <div class="field-group"><label class="field-label">Fréquence</label><input type="text" id="apFrequence" placeholder="Ex. Tous les jours"></div>
+        <div class="field-group"><label class="field-label">Rémunération (FCFA)</label><input type="number" id="apRemuneration" min="0"></div>
+        <div class="field-group"><label class="field-label">Transport (FCFA)</label><input type="number" id="apTransport" min="0"></div>
+        <div class="field-group"><label class="field-label">Autres frais (FCFA)</label><input type="number" id="apAutres" min="0"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button type="button" class="cta-inline" onclick="submitAddPerson()">Ajouter</button>
+        <button type="button" class="icon-btn wide" onclick="cancelAddPerson()">Annuler</button>
+      </div>
+    </div>`;
+  document.getElementById('apRelation').addEventListener('change', function(){
+    document.getElementById('apAideFields').style.display = this.value === 'aide_domestique' ? 'grid' : 'none';
+  });
+}
+window.openAddPerson = openAddPerson;
+function cancelAddPerson(){
+  const wrap = document.getElementById('addPersonFormWrap');
+  wrap.style.display = 'none';
+  wrap.innerHTML = '';
+}
+window.cancelAddPerson = cancelAddPerson;
+function submitAddPerson(){
+  const prenom = document.getElementById('apPrenom').value.trim();
+  if(!prenom){ alert('Le prénom est obligatoire.'); return; }
+  const relation = document.getElementById('apRelation').value;
+  const isAide = relation === 'aide_domestique';
+  const p = {
+    id: genId('p'), prenom, nom:'', relation,
+    dateNaissance: document.getElementById('apNaissance').value,
+    telephone:'',
+    aCharge: document.getElementById('apACharge').checked,
+    contribution: document.getElementById('apContribution').checked,
+    role: isAide ? document.getElementById('apRole').value.trim() : '',
+    frequence: isAide ? document.getElementById('apFrequence').value.trim() : '',
+    remuneration: isAide ? (Number(document.getElementById('apRemuneration').value)||0) : 0,
+    transport: isAide ? (Number(document.getElementById('apTransport').value)||0) : 0,
+    autres: isAide ? (Number(document.getElementById('apAutres').value)||0) : 0,
+    presente: true, dateArrivee: todayStr(), dateDepart: null,
+  };
+  DATA.personnes.push(p);
+  saveData();
+  cancelAddPerson();
+  renderAll();
+  renderFoyer();
+  showToast(`${prenom} a rejoint le foyer ✅`);
+}
+window.submitAddPerson = submitAddPerson;
+function editPerson(id){
+  const p = personById(id);
+  if(!p) return;
+  const newPrenom = prompt('Prénom :', p.prenom);
+  if(newPrenom === null) return;
+  if(newPrenom.trim()) p.prenom = newPrenom.trim();
+  const newNaissance = prompt('Date de naissance (AAAA-MM-JJ, laisser vide si inconnue) :', p.dateNaissance || '');
+  if(newNaissance !== null) p.dateNaissance = newNaissance.trim();
+  if(p.relation !== 'soi'){
+    p.aCharge = confirm(`"${p.prenom}" est-elle/il à charge financièrement du foyer ?\nOK = oui, Annuler = non.`);
+    p.contribution = confirm(`"${p.prenom}" contribue-t-elle/il aux revenus du foyer ?\nOK = oui, Annuler = non.`);
+  }
+  if(p.relation === 'aide_domestique'){
+    const newRem = prompt('Rémunération mensuelle (FCFA) :', p.remuneration||0);
+    if(newRem !== null) p.remuneration = Number(newRem) || 0;
+    const newTr = prompt('Transport (FCFA) :', p.transport||0);
+    if(newTr !== null) p.transport = Number(newTr) || 0;
+    const newAu = prompt('Autres frais (FCFA) :', p.autres||0);
+    if(newAu !== null) p.autres = Number(newAu) || 0;
+  }
+  saveData();
+  renderFoyer();
+  renderDashboard();
+  showToast('Personne mise à jour ✅');
+}
+window.editPerson = editPerson;
+function deactivatePerson(id){
+  const p = personById(id);
+  if(!p) return;
+  if(p.relation === 'soi'){ alert('Vous ne pouvez pas vous retirer vous-même du foyer.'); return; }
+  if(!confirm(`Faire partir "${p.prenom}" du foyer ? Son historique financier (transactions passées) sera entièrement conservé — cette action est réversible depuis "Personnes parties du foyer".`)) return;
+  p.presente = false;
+  p.dateDepart = todayStr();
+  saveData();
+  renderAll();
+  renderFoyer();
+  showToast(`${p.prenom} est marqué(e) comme parti(e) du foyer.`);
+}
+window.deactivatePerson = deactivatePerson;
+function reactivatePerson(id){
+  const p = personById(id);
+  if(!p) return;
+  p.presente = true;
+  p.dateDepart = null;
+  saveData();
+  renderAll();
+  renderFoyer();
+  showToast(`${p.prenom} fait de nouveau partie du foyer ✅`);
+}
+window.reactivatePerson = reactivatePerson;
 
 /* ============ COMPTES ============ */
 function accountById(id){ return (DATA.accounts||[]).find(a => a.id === id); }
@@ -527,7 +954,7 @@ document.getElementById('transferForm').addEventListener('submit', e => {
   to.balance += amount;
   DATA.transactions.push({
     id: genId('txn'), type:'transfert', amount, date: todayStr(),
-    accountId: fromId, toAccountId: toId, note, category:'', subcategory:'', person:'', scope:''
+    accountId: fromId, toAccountId: toId, note, category:'', subcategory:'', personId:'foyer'
   });
   saveData();
   e.target.reset();
@@ -542,7 +969,7 @@ document.getElementById('newIncomeForm').addEventListener('submit', e => {
   e.preventDefault();
   const amount = Number(document.getElementById('inAmount').value);
   const date = document.getElementById('inDate').value;
-  const person = document.getElementById('inPerson').value;
+  const personId = document.getElementById('inPersonId').value || 'foyer';
   const category = document.getElementById('inCategory').value;
   const accountId = document.getElementById('inAccount').value;
   const note = document.getElementById('inNote').value.trim();
@@ -553,12 +980,12 @@ document.getElementById('newIncomeForm').addEventListener('submit', e => {
   let recurringId = '';
   if(recurrent){
     const rec = {id: genId('rec'), label: categoryInfo(category,'revenu').label, type:'revenu', amount, category,
-      scope:'', accountId, day: Number(date.slice(8,10)), fixedCharge:false, lastRecordedMonth: monthKeyOf(date)};
+      personId, accountId, day: Number(date.slice(8,10)), fixedCharge:false, lastRecordedMonth: monthKeyOf(date)};
     DATA.recurring.push(rec);
     recurringId = rec.id;
   }
   account.balance += amount;
-  DATA.transactions.push({id: genId('txn'), type:'revenu', amount, date, category, subcategory:'', person, scope:'', accountId, toAccountId:'', note, recurringId});
+  DATA.transactions.push({id: genId('txn'), type:'revenu', amount, date, category, subcategory:'', personId, accountId, toAccountId:'', note, recurringId});
   saveData();
   e.target.reset();
   document.getElementById('inDate').value = todayStr();
@@ -571,7 +998,7 @@ document.getElementById('newExpenseForm').addEventListener('submit', e => {
   const date = document.getElementById('exDate').value;
   const category = document.getElementById('exCategory').value;
   const subcategory = document.getElementById('exSubcategory').value.trim();
-  const scope = document.getElementById('exScope').value;
+  const personId = document.getElementById('exPersonId').value || 'foyer';
   const accountId = document.getElementById('exAccount').value;
   const note = document.getElementById('exNote').value.trim();
   const recurrent = document.getElementById('exRecurrent').checked;
@@ -581,12 +1008,12 @@ document.getElementById('newExpenseForm').addEventListener('submit', e => {
   let recurringId = '';
   if(recurrent){
     const rec = {id: genId('rec'), label: subcategory || categoryInfo(category,'depense').label, type:'depense', amount, category,
-      scope, accountId, day: Number(date.slice(8,10)), fixedCharge:false, lastRecordedMonth: monthKeyOf(date)};
+      personId, accountId, day: Number(date.slice(8,10)), fixedCharge:false, lastRecordedMonth: monthKeyOf(date)};
     DATA.recurring.push(rec);
     recurringId = rec.id;
   }
   account.balance -= amount;
-  DATA.transactions.push({id: genId('txn'), type:'depense', amount, date, category, subcategory, person:'', scope, accountId, toAccountId:'', note, recurringId});
+  DATA.transactions.push({id: genId('txn'), type:'depense', amount, date, category, subcategory, personId, accountId, toAccountId:'', note, recurringId});
   saveData();
   e.target.reset();
   document.getElementById('exDate').value = todayStr();
@@ -626,7 +1053,7 @@ function renderRecurring(){
         <div class="row-icon">${info.icon}</div>
         <div class="row-body">
           <div class="row-title">${escapeHtml(r.label)} ${r.fixedCharge?'<span class="tag violet">Charge fixe</span>':''} ${done?'<span class="tag green">Fait ce mois</span>':'<span class="tag orange">À enregistrer</span>'}</div>
-          <div class="row-sub">${r.type === 'revenu' ? 'Revenu' : 'Dépense'} · le ${r.day} de chaque mois · ${escapeHtml(accountById(r.accountId)?accountById(r.accountId).name:'—')}</div>
+          <div class="row-sub">${r.type === 'revenu' ? 'Revenu' : 'Dépense'} · le ${r.day} de chaque mois · ${escapeHtml(accountById(r.accountId)?accountById(r.accountId).name:'—')}${r.personId && r.personId!=='foyer' ? ' · '+escapeHtml(personLabel(r.personId)) : ''}</div>
         </div>
         <div class="row-amount ${sign}">${r.type==='revenu'?'+':'-'}${formatFCFA(r.amount)}</div>
         <div class="row-actions">
@@ -645,12 +1072,13 @@ function recordRecurring(id){
   const account = accountById(r.accountId);
   if(!account){ alert('Le compte associé à cette récurrence n\'existe plus.'); return; }
   const date = dateForDayInMonth(key, r.day);
+  const personId = r.personId || 'foyer';
   if(r.type === 'revenu'){
     account.balance += r.amount;
-    DATA.transactions.push({id: genId('txn'), type:'revenu', amount:r.amount, date, category:r.category, subcategory:'', person:'', scope:'', accountId:r.accountId, toAccountId:'', note:r.label, recurringId:r.id});
+    DATA.transactions.push({id: genId('txn'), type:'revenu', amount:r.amount, date, category:r.category, subcategory:'', personId, accountId:r.accountId, toAccountId:'', note:r.label, recurringId:r.id});
   } else {
     account.balance -= r.amount;
-    DATA.transactions.push({id: genId('txn'), type:'depense', amount:r.amount, date, category:r.category, subcategory:r.label, person:'', scope:r.scope, accountId:r.accountId, toAccountId:'', note:'', recurringId:r.id});
+    DATA.transactions.push({id: genId('txn'), type:'depense', amount:r.amount, date, category:r.category, subcategory:r.label, personId, accountId:r.accountId, toAccountId:'', note:'', recurringId:r.id});
   }
   r.lastRecordedMonth = key;
   saveData();
@@ -692,12 +1120,12 @@ function txnRowHtml(t){
   if(t.type === 'revenu'){
     const info = categoryInfo(t.category, 'revenu');
     icon = info.icon; title = info.label + (t.note?` — ${escapeHtml(t.note)}`:'');
-    sub = `${from?from.name:'—'}${t.person?' · '+t.person:''}`;
+    sub = `${from?from.name:'—'}${t.personId && t.personId!=='foyer' ? ' · '+escapeHtml(personLabel(t.personId)) : ''}`;
     sign = '+'; cls = 'pos';
   } else if(t.type === 'depense'){
     const info = categoryInfo(t.category, 'depense');
     icon = info.icon; title = info.label + (t.subcategory?` — ${escapeHtml(t.subcategory)}`:'');
-    sub = `${from?from.name:'—'}${t.scope?' · '+scopeLabel(t.scope):''}`;
+    sub = `${from?from.name:'—'} · ${escapeHtml(personLabel(t.personId||'foyer'))}`;
     sign = '-'; cls = 'neg';
   } else if(t.type === 'epargne_ajout' || t.type === 'epargne_retrait'){
     icon = '🐷'; title = (t.type==='epargne_ajout'?'Ajout épargne — ':'Retrait épargne — ') + escapeHtml(t.note||'');
@@ -715,9 +1143,6 @@ function txnRowHtml(t){
       <div class="row-amount ${cls}">${sign}${formatFCFA(t.amount)}</div>
       <div class="row-actions"><button class="icon-btn danger" title="Supprimer" onclick="deleteTransaction('${t.id}')">🗑</button></div>
     </div>`;
-}
-function scopeLabel(scope){
-  return {famille:'Famille', homme:'Homme', femme:'Femme', bebe:'Bébé', aide:'Aide à la maison'}[scope] || scope;
 }
 function renderTransactions(){
   const typeFilter = document.getElementById('txnFilterType').value;
@@ -843,7 +1268,7 @@ function toggleBillPaid(id){
     if(!account) account = pickAccount(`Avec quel compte payez-vous "${b.name}" (${formatFCFA(b.amount)}) ?`);
     if(!account){ alert('Paiement annulé : aucun compte sélectionné.'); return; }
     account.balance -= b.amount;
-    const txn = {id: genId('txn'), type:'depense', amount:b.amount, date: todayStr(), category:'maison', subcategory:b.name, person:'', scope:'famille', accountId:account.id, toAccountId:'', note:`Facture : ${b.name}`, recurringId:''};
+    const txn = {id: genId('txn'), type:'depense', amount:b.amount, date: todayStr(), category:'maison', subcategory:b.name, personId:'foyer', accountId:account.id, toAccountId:'', note:`Facture : ${b.name}`, recurringId:''};
     DATA.transactions.push(txn);
     b.paid = true;
     b.paidTxnId = txn.id;
@@ -925,7 +1350,7 @@ function adjustGoal(id, direction){
   g.current += direction * amount;
   DATA.transactions.push({
     id: genId('txn'), type: direction>0?'epargne_ajout':'epargne_retrait', amount, date: todayStr(),
-    category:'', subcategory:'', person:'', scope:'', accountId:'', toAccountId:'', note:g.name, recurringId:''
+    category:'', subcategory:'', personId:'foyer', accountId:'', toAccountId:'', note:g.name, recurringId:''
   });
   saveData();
   renderAll();
@@ -1022,7 +1447,7 @@ function repayDebt(id){
   if(!account){ alert('Remboursement annulé.'); return; }
   account.balance -= amount;
   d.restant = Math.max(0, d.restant - amount);
-  DATA.transactions.push({id: genId('txn'), type:'depense', amount, date: todayStr(), category:'dettes', subcategory:d.name, person:'', scope:'famille', accountId:account.id, toAccountId:'', note:`Remboursement : ${d.name}`, recurringId:''});
+  DATA.transactions.push({id: genId('txn'), type:'depense', amount, date: todayStr(), category:'dettes', subcategory:d.name, personId:'foyer', accountId:account.id, toAccountId:'', note:`Remboursement : ${d.name}`, recurringId:''});
   saveData();
   renderAll();
   if(d.restant <= 0) showToast(`🎉 Dette "${d.name}" totalement remboursée !`);
@@ -1070,112 +1495,6 @@ function renderDebts(){
         <div class="progress-label"><span>${pctPaid}% remboursé</span><span></span></div>
       </div>`;
   }).join('') : `<div class="empty">Aucune dette enregistrée.</div>`;
-}
-
-/* ============ FAMILLE ============ */
-document.getElementById('fmBebeCheck').addEventListener('change', function(){
-  document.getElementById('fmBebeFields').style.display = this.checked ? 'grid' : 'none';
-});
-document.getElementById('fmAideCheck').addEventListener('change', function(){
-  document.getElementById('fmAideFields').style.display = this.checked ? 'grid' : 'none';
-});
-document.getElementById('familyForm').addEventListener('submit', e => {
-  e.preventDefault();
-  DATA.foyer.nom = document.getElementById('fmFoyerNom').value.trim();
-  DATA.membres.homme.prenom = document.getElementById('fmHommePrenom').value.trim();
-  DATA.membres.femme.prenom = document.getElementById('fmFemmePrenom').value.trim();
-  const bebeActif = document.getElementById('fmBebeCheck').checked;
-  DATA.membres.bebe = {
-    actif: bebeActif,
-    prenom: document.getElementById('fmBebePrenom').value.trim(),
-    naissance: document.getElementById('fmBebeNaissance').value,
-  };
-  const aideActif = document.getElementById('fmAideCheck').checked;
-  DATA.membres.aide = {
-    actif: aideActif,
-    prenom: document.getElementById('fmAidePrenom').value.trim(),
-    role: document.getElementById('fmAideRole').value.trim(),
-    frequence: document.getElementById('fmAideFrequence').value.trim(),
-    remuneration: Number(document.getElementById('fmAideRemuneration').value) || 0,
-    transport: Number(document.getElementById('fmAideTransport').value) || 0,
-    autres: Number(document.getElementById('fmAideAutres').value) || 0,
-  };
-  saveData();
-  renderAll();
-  renderFamily();
-  showToast('Informations de la famille mises à jour ✅');
-});
-function fillFamilyForm(){
-  document.getElementById('fmFoyerNom').value = DATA.foyer.nom || '';
-  document.getElementById('fmHommePrenom').value = DATA.membres.homme.prenom || '';
-  document.getElementById('fmFemmePrenom').value = DATA.membres.femme.prenom || '';
-  const bebe = DATA.membres.bebe || {};
-  document.getElementById('fmBebeCheck').checked = !!bebe.actif;
-  document.getElementById('fmBebeFields').style.display = bebe.actif ? 'grid' : 'none';
-  document.getElementById('fmBebePrenom').value = bebe.prenom || '';
-  document.getElementById('fmBebeNaissance').value = bebe.naissance || '';
-  const aide = DATA.membres.aide || {};
-  document.getElementById('fmAideCheck').checked = !!aide.actif;
-  document.getElementById('fmAideFields').style.display = aide.actif ? 'grid' : 'none';
-  document.getElementById('fmAidePrenom').value = aide.prenom || '';
-  document.getElementById('fmAideRole').value = aide.role || '';
-  document.getElementById('fmAideFrequence').value = aide.frequence || '';
-  document.getElementById('fmAideRemuneration').value = aide.remuneration || 0;
-  document.getElementById('fmAideTransport').value = aide.transport || 0;
-  document.getElementById('fmAideAutres').value = aide.autres || 0;
-}
-function ageFromBirthdate(dateStr){
-  if(!dateStr) return '—';
-  const birth = new Date(dateStr + 'T00:00:00');
-  const now = new Date();
-  let months = (now.getFullYear()-birth.getFullYear())*12 + (now.getMonth()-birth.getMonth());
-  if(now.getDate() < birth.getDate()) months--;
-  if(months < 1){
-    const days = Math.max(0, Math.round((now - birth) / 86400000));
-    return `${days} jour${days>1?'s':''}`;
-  }
-  return `${months} mois`;
-}
-function renderFamily(){
-  fillFamilyForm();
-  const bebe = DATA.membres.bebe || {};
-  const babyCard = document.getElementById('babyCard');
-  if(bebe.actif){
-    babyCard.style.display = 'block';
-    const thisMonth = currentMonthKey();
-    const months = [0,-1,-2].map(n => addMonthsToKey(thisMonth, n));
-    const monthTotals = months.map(k => sumAmount(expensesForMonth(k, 'bebe')));
-    const avg = Math.round((monthTotals[0]+monthTotals[1]+monthTotals[2])/3);
-    const sinceBirth = (DATA.transactions||[]).filter(t => t.type==='depense' && t.category==='bebe' && (!bebe.naissance || t.date >= bebe.naissance));
-    const totalSince = sumAmount(sinceBirth);
-    document.getElementById('babyStats').innerHTML = `
-      <div class="stat-row">
-        <div class="stat-box"><div class="label">${escapeHtml(bebe.prenom||'Bébé')}</div><div class="value">${ageFromBirthdate(bebe.naissance)}</div></div>
-        <div class="stat-box"><div class="label">Dépenses ce mois</div><div class="value neg">${formatFCFA(monthTotals[0])}</div></div>
-      </div>
-      <div class="budget-block"><div class="budget-block-top"><span class="name">${monthLabel(months[0])}</span><span class="nums">${formatFCFA(monthTotals[0])}</span></div></div>
-      <div class="budget-block"><div class="budget-block-top"><span class="name">${monthLabel(months[1])}</span><span class="nums">${formatFCFA(monthTotals[1])}</span></div></div>
-      <div class="budget-block"><div class="budget-block-top"><span class="name">${monthLabel(months[2])}</span><span class="nums">${formatFCFA(monthTotals[2])}</span></div></div>
-      <div class="budget-block"><div class="budget-block-top"><span class="name">Moyenne mensuelle</span><span class="nums">${formatFCFA(avg)}</span></div></div>
-      <div class="budget-block"><div class="budget-block-top"><span class="name">Total depuis la naissance</span><span class="nums">${formatFCFA(totalSince)}</span></div></div>`;
-  } else {
-    babyCard.style.display = 'none';
-  }
-  const aide = DATA.membres.aide || {};
-  const aideCard = document.getElementById('aideCard');
-  if(aide.actif){
-    aideCard.style.display = 'block';
-    const total = (Number(aide.remuneration)||0) + (Number(aide.transport)||0) + (Number(aide.autres)||0);
-    const monthAideExpenses = sumAmount(expensesForMonth(currentMonthKey(), 'aide'));
-    document.getElementById('aideStats').innerHTML = `
-      <div class="budget-block"><div class="budget-block-top"><span class="name">Salaire</span><span class="nums">${formatFCFA(aide.remuneration)}</span></div></div>
-      <div class="budget-block"><div class="budget-block-top"><span class="name">Transport</span><span class="nums">${formatFCFA(aide.transport)}</span></div></div>
-      <div class="budget-block"><div class="budget-block-top"><span class="name">Autres</span><span class="nums">${formatFCFA(aide.autres)}</span></div></div>
-      <div class="budget-block"><div class="budget-block-top"><span class="name">Coût total prévu / mois</span><span class="nums">${formatFCFA(total)}</span></div></div>
-      <div class="budget-block"><div class="budget-block-top"><span class="name">Dépenses "Aide" enregistrées ce mois</span><span class="nums">${formatFCFA(monthAideExpenses)}</span></div></div>`;
-  } else {
-    aideCard.style.display = 'none';
-  }
 }
 
 /* ============ PRÉVISIONS ============ */
@@ -1323,9 +1642,10 @@ function renderReportComparison(){
 
 /* ============ PARAMÈTRES ============ */
 function renderSettings(){
+  const soi = soiPersonne() || {prenom:'', nom:'', telephone:''};
   document.getElementById('settingsProfile').innerHTML = `
-    <div class="settings-row"><div><div class="label">${escapeHtml(DATA.profil.prenom)} ${escapeHtml(DATA.profil.nom)}</div></div></div>
-    <div class="settings-row"><div><div class="label">Téléphone</div><div class="desc">${escapeHtml(DATA.profil.telephone) || 'Non renseigné'}</div></div></div>
+    <div class="settings-row"><div><div class="label">${escapeHtml(soi.prenom)} ${escapeHtml(soi.nom||'')}</div></div></div>
+    <div class="settings-row"><div><div class="label">Téléphone</div><div class="desc">${escapeHtml(soi.telephone) || 'Non renseigné'}</div></div></div>
     <div class="settings-row"><div><div class="label">Foyer</div><div class="desc">${escapeHtml(DATA.foyer.nom)}</div></div></div>`;
   const el = document.getElementById('settingsCategoriesList');
   const customCats = DATA.categories || [];
@@ -1335,17 +1655,20 @@ function renderSettings(){
   `).join('') : `<div class="empty">Aucune catégorie personnalisée.</div>`;
 }
 function editProfile(){
-  const newPrenom = prompt('Votre prénom :', DATA.profil.prenom);
+  const soi = soiPersonne();
+  if(!soi){ alert('Aucun profil trouvé.'); return; }
+  const newPrenom = prompt('Votre prénom :', soi.prenom);
   if(newPrenom === null) return;
-  const newNom = prompt('Votre nom :', DATA.profil.nom);
+  const newNom = prompt('Votre nom :', soi.nom || '');
   if(newNom === null) return;
-  const newTel = prompt('Votre téléphone :', DATA.profil.telephone);
+  const newTel = prompt('Votre téléphone :', soi.telephone || '');
   if(newTel === null) return;
-  DATA.profil.prenom = newPrenom.trim();
-  DATA.profil.nom = newNom.trim();
-  DATA.profil.telephone = newTel.trim();
+  soi.prenom = newPrenom.trim();
+  soi.nom = newNom.trim();
+  soi.telephone = newTel.trim();
   saveData();
   renderSettings();
+  renderDashboard();
   showToast('Profil mis à jour ✅');
 }
 window.editProfile = editProfile;
@@ -1394,7 +1717,9 @@ function importData(file){
     if(!parsed.accounts || !parsed.transactions){ alert('Fichier invalide : structure inattendue.'); return; }
     if(!confirm('Remplacer TOUTES les données actuelles par cette sauvegarde ? Cette action est irréversible.')) return;
     delete parsed.exportedAt;
+    parsed = migrateLegacyIfNeeded(parsed);
     DATA = Object.assign(defaultFoyerData(), parsed);
+    if(!Array.isArray(DATA.personnes)) DATA.personnes = [];
     saveData();
     renderAll();
     showToast('Sauvegarde restaurée ✅');
@@ -1407,7 +1732,10 @@ window.importData = importData;
 /* ============ TABLEAU DE BORD ============ */
 function renderDashboard(){
   const key = currentMonthKey();
-  document.getElementById('dashFoyerTitle').textContent = `Bon retour, ${DATA.profil.prenom || ''}`.trim();
+  const soi = soiPersonne();
+  document.getElementById('dashFoyerTitle').textContent = `Bon retour${soi && soi.prenom ? ', '+soi.prenom : ''}`;
+  const activeCount = activePersonnes().length;
+  document.getElementById('dashSub').textContent = activeCount <= 1 ? 'Vous gérez ce foyer en solo.' : `Foyer de ${activeCount} personnes.`;
   document.getElementById('dashDate').textContent = new Date().toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long'});
   const usable = totalUsable();
   document.getElementById('dashTotalDisponible').textContent = formatFCFA(usable);
