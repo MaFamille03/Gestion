@@ -45,6 +45,10 @@ const ACCOUNT_TYPES = [
   {id:'CASH', label:'Espèces', icon:'💵'},
   {id:'OTHER', label:'Autre', icon:'📦'},
 ];
+/* Comptes mobile money sur lesquels un transfert sortant prélève 1% de frais
+   (comportement réel des opérateurs ivoiriens : Wave, Djamo, Orange Money,
+   MTN Money, Moov Money). Banque, espèces et "Autre" restent sans frais. */
+const MOBILE_MONEY_TYPES = ['DJAMO','ORANGE_MONEY','WAVE','MTN_MONEY','MOOV_MONEY'];
 const EXPENSE_CATEGORIES = [
   {id:'maison', label:'Maison', icon:'🏠'},
   {id:'alimentation', label:'Alimentation', icon:'🍚'},
@@ -160,6 +164,78 @@ function showToast(message){
     setTimeout(() => toast.remove(), 400);
   }, 3200);
 }
+/* ============ MODALE GÉNÉRIQUE (Userforms) ============
+   Remplace les prompt()/confirm() du navigateur par une zone de texte centrée
+   et organisée, cohérente avec le design de l'application. openModal() décrit
+   les champs à afficher ; onSubmit reçoit un objet {champId: valeur}. */
+function openModal(opts){
+  const overlay = document.getElementById('modalOverlay');
+  const fieldsHtml = opts.fields.map(f => {
+    if(f.type === 'checkbox'){
+      return `<label class="role-filter-toggle"><input type="checkbox" id="modal_${f.id}" ${f.value?'checked':''}><span>${escapeHtml(f.label)}</span></label>`;
+    }
+    if(f.type === 'select'){
+      const optsHtml = (f.options||[]).map(o => `<option value="${escapeHtml(o.value)}" ${String(o.value)===String(f.value)?'selected':''}>${escapeHtml(o.label)}</option>`).join('');
+      return `<div class="field-group"><label class="field-label">${escapeHtml(f.label)}</label><select id="modal_${f.id}">${optsHtml}</select></div>`;
+    }
+    const type = f.type || 'text';
+    const step = type === 'number' ? ' step="1"' : '';
+    return `<div class="field-group"><label class="field-label">${escapeHtml(f.label)}</label><input type="${type}" id="modal_${f.id}" value="${escapeHtml(f.value===undefined||f.value===null?'':f.value)}"${step} placeholder="${escapeHtml(f.placeholder||'')}"></div>`;
+  }).join('');
+  overlay.innerHTML = `
+    <div class="modal-card">
+      <button type="button" class="modal-close" onclick="closeModal()">✕</button>
+      <h3>${escapeHtml(opts.title||'')}</h3>
+      ${opts.sub ? `<p class="modal-sub">${escapeHtml(opts.sub)}</p>` : ''}
+      <form id="modalForm">
+        <div class="modal-fields">${fieldsHtml}</div>
+        <div class="modal-actions">
+          <button type="submit" class="cta-inline">${escapeHtml(opts.submitLabel||'Enregistrer')}</button>
+          <button type="button" class="icon-btn wide" onclick="closeModal()">Annuler</button>
+        </div>
+      </form>
+    </div>`;
+  overlay.classList.add('show');
+  // Champs conditionnels génériques : ex. les champs "aide à la maison"
+  // n'apparaissent que si le lien choisi est "aide_domestique".
+  if(opts.conditional){
+    const trigger = document.getElementById('modal_' + opts.conditional.trigger);
+    if(trigger){
+      const apply = () => {
+        const show = trigger.value === opts.conditional.showValue;
+        opts.conditional.fieldIds.forEach(fid => {
+          const el = document.getElementById('modal_' + fid);
+          const wrap = el ? (el.closest('.field-group') || el.closest('.role-filter-toggle')) : null;
+          if(wrap) wrap.style.display = show ? '' : 'none';
+        });
+      };
+      trigger.addEventListener('change', apply);
+      apply();
+    }
+  }
+  document.getElementById('modalForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const values = {};
+    opts.fields.forEach(f => {
+      const el = document.getElementById('modal_'+f.id);
+      if(!el) return;
+      values[f.id] = f.type === 'checkbox' ? el.checked : el.value;
+    });
+    closeModal();
+    opts.onSubmit(values);
+  });
+  const firstInput = overlay.querySelector('input, select');
+  if(firstInput) setTimeout(() => firstInput.focus(), 30);
+}
+function closeModal(){
+  const overlay = document.getElementById('modalOverlay');
+  overlay.classList.remove('show');
+  overlay.innerHTML = '';
+}
+window.closeModal = closeModal;
+document.getElementById('modalOverlay').addEventListener('click', e => {
+  if(e.target.id === 'modalOverlay') closeModal();
+});
 function initials(name){
   const c = (name||'').trim().slice(0,1).toUpperCase();
   return c || '?';
@@ -176,6 +252,26 @@ function ageFromBirthdate(dateStr){
   }
   if(months < 24) return `${months} mois`;
   return `${Math.floor(months/12)} an${Math.floor(months/12)>1?'s':''}`;
+}
+/* ============ DATES — affichages évolués ============
+   formatDateLong : "lun. 12 août 2026" (jour de semaine abrégé + date complète).
+   relativeDatePill : petit badge coloré ("Aujourd'hui", "Demain", "Dans 3 j",
+   "Hier", "En retard 2 j") utilisé sur les factures et les échéances à venir. */
+function formatDateLong(dateStr){
+  if(!dateStr) return '—';
+  const d = new Date(dateStr + 'T00:00:00');
+  let s = d.toLocaleDateString('fr-FR', {weekday:'short', day:'numeric', month:'short', year:'numeric'});
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+function relativeDatePill(dateStr){
+  if(!dateStr) return '';
+  const n = daysUntil(dateStr);
+  if(n === 0) return `<span class="date-pill today">Aujourd'hui</span>`;
+  if(n === 1) return `<span class="date-pill soon">Demain</span>`;
+  if(n === -1) return `<span class="date-pill late">Hier</span>`;
+  if(n > 1 && n <= 7) return `<span class="date-pill soon">Dans ${n} j</span>`;
+  if(n < -1) return `<span class="date-pill late">En retard ${Math.abs(n)} j</span>`;
+  return '';
 }
 
 /* ============ MODÈLE DE DONNÉES « FOYER DYNAMIQUE » ============
@@ -676,6 +772,7 @@ function fillPersonSelect(selectEl, keepValue){
 function fillAllPersonSelects(){
   fillPersonSelect(document.getElementById('inPersonId'), true);
   fillPersonSelect(document.getElementById('exPersonId'), true);
+  fillPersonSelect(document.getElementById('naOwner'), true);
 }
 function personMonthlyPersonalExpense(personId, key){
   return sumAmount((DATA.transactions||[]).filter(t => t.type === 'depense' && t.personId === personId && monthKeyOf(t.date) === key));
@@ -736,93 +833,86 @@ document.getElementById('foyerInfoForm').addEventListener('submit', e => {
   showToast('Informations du foyer mises à jour ✅');
 });
 function openAddPerson(){
-  const wrap = document.getElementById('addPersonFormWrap');
-  wrap.style.display = 'block';
-  wrap.innerHTML = `
-    <div class="person-form-card">
-      <div class="pf-head"><span class="pf-badge">＋</span> Nouvelle personne</div>
-      <div class="form-grid" style="background:transparent;border:none;padding:0;">
-        <div class="field-group"><label class="field-label">Prénom</label><input type="text" id="apPrenom" required></div>
-        <div class="field-group"><label class="field-label">Lien avec vous</label>
-          <select id="apRelation">${RELATIONS.filter(r=>r.id!=='soi').map(r=>`<option value="${r.id}">${r.icon} ${r.label}</option>`).join('')}</select>
-        </div>
-        <div class="field-group"><label class="field-label">Date de naissance (facultatif)</label><input type="date" id="apNaissance"></div>
-      </div>
-      <label class="role-filter-toggle"><input type="checkbox" id="apACharge"><span>À charge financièrement</span></label>
-      <label class="role-filter-toggle"><input type="checkbox" id="apContribution"><span>Contribue aux revenus du foyer</span></label>
-      <div class="setup-grid" id="apAideFields" style="display:none;grid-column:1/-1;margin-top:8px;">
-        <div class="field-group"><label class="field-label">Rôle</label><input type="text" id="apRole" placeholder="Ex. Aide ménagère"></div>
-        <div class="field-group"><label class="field-label">Fréquence</label><input type="text" id="apFrequence" placeholder="Ex. Tous les jours"></div>
-        <div class="field-group"><label class="field-label">Rémunération (FCFA)</label><input type="number" id="apRemuneration" min="0"></div>
-        <div class="field-group"><label class="field-label">Transport (FCFA)</label><input type="number" id="apTransport" min="0"></div>
-        <div class="field-group"><label class="field-label">Autres frais (FCFA)</label><input type="number" id="apAutres" min="0"></div>
-      </div>
-      <div style="display:flex;gap:10px;margin-top:14px;">
-        <button type="button" class="cta-inline" onclick="submitAddPerson()">Ajouter</button>
-        <button type="button" class="icon-btn wide" onclick="cancelAddPerson()">Annuler</button>
-      </div>
-    </div>`;
-  document.getElementById('apRelation').addEventListener('change', function(){
-    document.getElementById('apAideFields').style.display = this.value === 'aide_domestique' ? 'grid' : 'none';
+  const relationOptions = RELATIONS.filter(r => r.id !== 'soi').map(r => ({value:r.id, label:`${r.icon} ${r.label}`}));
+  openModal({
+    title: 'Ajouter une personne au foyer',
+    submitLabel: 'Ajouter',
+    fields: [
+      {id:'prenom', label:'Prénom', type:'text', value:''},
+      {id:'relation', label:'Lien avec vous', type:'select', value:relationOptions[0].value, options:relationOptions},
+      {id:'naissance', label:'Date de naissance (facultatif)', type:'date', value:''},
+      {id:'acharge', label:'À charge financièrement', type:'checkbox', value:false},
+      {id:'contribution', label:'Contribue aux revenus du foyer', type:'checkbox', value:false},
+      {id:'role', label:'Rôle (aide à la maison)', type:'text', value:'', placeholder:'Ex. Aide ménagère'},
+      {id:'frequence', label:'Fréquence (aide à la maison)', type:'text', value:'', placeholder:'Ex. Tous les jours'},
+      {id:'remuneration', label:'Rémunération mensuelle (FCFA)', type:'number', value:0},
+      {id:'transport', label:'Transport (FCFA)', type:'number', value:0},
+      {id:'autres', label:'Autres frais (FCFA)', type:'number', value:0},
+    ],
+    conditional: {trigger:'relation', showValue:'aide_domestique', fieldIds:['role','frequence','remuneration','transport','autres']},
+    onSubmit(v){
+      const prenom = v.prenom.trim();
+      if(!prenom){ alert('Le prénom est obligatoire.'); return; }
+      const isAide = v.relation === 'aide_domestique';
+      const p = {
+        id: genId('p'), prenom, nom:'', relation:v.relation,
+        dateNaissance: v.naissance, telephone:'',
+        aCharge: !!v.acharge, contribution: !!v.contribution,
+        role: isAide ? v.role.trim() : '',
+        frequence: isAide ? v.frequence.trim() : '',
+        remuneration: isAide ? (Number(v.remuneration)||0) : 0,
+        transport: isAide ? (Number(v.transport)||0) : 0,
+        autres: isAide ? (Number(v.autres)||0) : 0,
+        presente: true, dateArrivee: todayStr(), dateDepart: null,
+      };
+      DATA.personnes.push(p);
+      saveData();
+      renderAll();
+      renderFoyer();
+      showToast(`${prenom} a rejoint le foyer ✅`);
+    }
   });
 }
 window.openAddPerson = openAddPerson;
-function cancelAddPerson(){
-  const wrap = document.getElementById('addPersonFormWrap');
-  wrap.style.display = 'none';
-  wrap.innerHTML = '';
-}
-window.cancelAddPerson = cancelAddPerson;
-function submitAddPerson(){
-  const prenom = document.getElementById('apPrenom').value.trim();
-  if(!prenom){ alert('Le prénom est obligatoire.'); return; }
-  const relation = document.getElementById('apRelation').value;
-  const isAide = relation === 'aide_domestique';
-  const p = {
-    id: genId('p'), prenom, nom:'', relation,
-    dateNaissance: document.getElementById('apNaissance').value,
-    telephone:'',
-    aCharge: document.getElementById('apACharge').checked,
-    contribution: document.getElementById('apContribution').checked,
-    role: isAide ? document.getElementById('apRole').value.trim() : '',
-    frequence: isAide ? document.getElementById('apFrequence').value.trim() : '',
-    remuneration: isAide ? (Number(document.getElementById('apRemuneration').value)||0) : 0,
-    transport: isAide ? (Number(document.getElementById('apTransport').value)||0) : 0,
-    autres: isAide ? (Number(document.getElementById('apAutres').value)||0) : 0,
-    presente: true, dateArrivee: todayStr(), dateDepart: null,
-  };
-  DATA.personnes.push(p);
-  saveData();
-  cancelAddPerson();
-  renderAll();
-  renderFoyer();
-  showToast(`${prenom} a rejoint le foyer ✅`);
-}
-window.submitAddPerson = submitAddPerson;
 function editPerson(id){
   const p = personById(id);
   if(!p) return;
-  const newPrenom = prompt('Prénom :', p.prenom);
-  if(newPrenom === null) return;
-  if(newPrenom.trim()) p.prenom = newPrenom.trim();
-  const newNaissance = prompt('Date de naissance (AAAA-MM-JJ, laisser vide si inconnue) :', p.dateNaissance || '');
-  if(newNaissance !== null) p.dateNaissance = newNaissance.trim();
+  const fields = [
+    {id:'prenom', label:'Prénom', type:'text', value:p.prenom},
+    {id:'naissance', label:'Date de naissance (facultatif)', type:'date', value:p.dateNaissance||''},
+  ];
   if(p.relation !== 'soi'){
-    p.aCharge = confirm(`"${p.prenom}" est-elle/il à charge financièrement du foyer ?\nOK = oui, Annuler = non.`);
-    p.contribution = confirm(`"${p.prenom}" contribue-t-elle/il aux revenus du foyer ?\nOK = oui, Annuler = non.`);
+    fields.push({id:'acharge', label:'À charge financièrement', type:'checkbox', value:p.aCharge});
+    fields.push({id:'contribution', label:'Contribue aux revenus du foyer', type:'checkbox', value:p.contribution});
   }
   if(p.relation === 'aide_domestique'){
-    const newRem = prompt('Rémunération mensuelle (FCFA) :', p.remuneration||0);
-    if(newRem !== null) p.remuneration = Number(newRem) || 0;
-    const newTr = prompt('Transport (FCFA) :', p.transport||0);
-    if(newTr !== null) p.transport = Number(newTr) || 0;
-    const newAu = prompt('Autres frais (FCFA) :', p.autres||0);
-    if(newAu !== null) p.autres = Number(newAu) || 0;
+    fields.push({id:'remuneration', label:'Rémunération mensuelle (FCFA)', type:'number', value:p.remuneration||0});
+    fields.push({id:'transport', label:'Transport (FCFA)', type:'number', value:p.transport||0});
+    fields.push({id:'autres', label:'Autres frais (FCFA)', type:'number', value:p.autres||0});
   }
-  saveData();
-  renderFoyer();
-  renderDashboard();
-  showToast('Personne mise à jour ✅');
+  openModal({
+    title: `Modifier ${p.prenom}`,
+    sub: relationInfo(p.relation).label,
+    submitLabel: 'Enregistrer',
+    fields,
+    onSubmit(v){
+      if(v.prenom.trim()) p.prenom = v.prenom.trim();
+      p.dateNaissance = v.naissance || '';
+      if(p.relation !== 'soi'){
+        p.aCharge = !!v.acharge;
+        p.contribution = !!v.contribution;
+      }
+      if(p.relation === 'aide_domestique'){
+        p.remuneration = Number(v.remuneration) || 0;
+        p.transport = Number(v.transport) || 0;
+        p.autres = Number(v.autres) || 0;
+      }
+      saveData();
+      renderFoyer();
+      renderDashboard();
+      showToast('Personne mise à jour ✅');
+    }
+  });
 }
 window.editPerson = editPerson;
 function deactivatePerson(id){
@@ -880,15 +970,16 @@ function renderAccounts(){
   document.getElementById('acctTotalReserved').textContent = formatFCFA(totalReserved());
   document.getElementById('acctTotalUsable').textContent = formatFCFA(totalUsable());
   const el = document.getElementById('accountsList');
-  const accounts = DATA.accounts || [];
+  const accounts = (DATA.accounts || []).slice().sort((a,b) => a.name.localeCompare(b.name, 'fr'));
   el.innerHTML = accounts.length ? accounts.map(a => {
     const t = accountTypeInfo(a.type);
+    const ownerSub = a.ownerId && a.ownerId !== 'foyer' ? ' · ' + escapeHtml(personLabel(a.ownerId)) : ' · Foyer (commun)';
     return `
       <div class="row-item">
         <div class="row-icon">${t.icon}</div>
         <div class="row-body">
           <div class="row-title">${escapeHtml(a.name)}</div>
-          <div class="row-sub">${t.label}</div>
+          <div class="row-sub">${t.label}${ownerSub}</div>
         </div>
         <div class="row-amount">${formatFCFA(a.balance)}</div>
         <div class="row-actions">
@@ -903,8 +994,9 @@ document.getElementById('newAccountForm').addEventListener('submit', e => {
   const name = document.getElementById('naName').value.trim();
   const type = document.getElementById('naType').value;
   const balance = Number(document.getElementById('naBalance').value) || 0;
+  const ownerId = document.getElementById('naOwner').value || 'foyer';
   if(!name) return;
-  DATA.accounts.push({id: genId('acc'), name, type, balance});
+  DATA.accounts.push({id: genId('acc'), name, type, balance, ownerId});
   saveData();
   e.target.reset();
   document.getElementById('naBalance').value = 0;
@@ -914,15 +1006,27 @@ document.getElementById('newAccountForm').addEventListener('submit', e => {
 function editAccount(id){
   const a = accountById(id);
   if(!a) return;
-  const newName = prompt('Nom du compte :', a.name);
-  if(newName === null) return;
-  const newBalance = prompt('Corriger le solde actuel (FCFA) — à utiliser seulement pour un ajustement, pas pour une dépense/un revenu :', a.balance);
-  if(newBalance === null) return;
-  if(newName.trim()) a.name = newName.trim();
-  const nb = Number(newBalance);
-  if(!isNaN(nb)) a.balance = nb;
-  saveData();
-  renderAll();
+  const ownerOptions = [{value:'foyer', label:'👨‍👩‍👧‍👦 Foyer (commun)'}].concat(
+    activePersonnes().map(p => ({value:p.id, label:`${relationInfo(p.relation).icon} ${p.prenom}`}))
+  );
+  openModal({
+    title: 'Modifier ce compte',
+    submitLabel: 'Enregistrer',
+    fields: [
+      {id:'name', label:'Nom du compte', type:'text', value:a.name},
+      {id:'balance', label:'Solde actuel (FCFA) — ajustement seulement', type:'number', value:a.balance},
+      {id:'owner', label:'Propriétaire', type:'select', value:a.ownerId||'foyer', options:ownerOptions},
+    ],
+    onSubmit(v){
+      if(v.name.trim()) a.name = v.name.trim();
+      const nb = Number(v.balance);
+      if(!isNaN(nb)) a.balance = nb;
+      a.ownerId = v.owner || 'foyer';
+      saveData();
+      renderAll();
+      showToast('Compte mis à jour ✅');
+    }
+  });
 }
 window.editAccount = editAccount;
 function deleteAccount(id){
@@ -938,6 +1042,25 @@ function deleteAccount(id){
   renderAll();
 }
 window.deleteAccount = deleteAccount;
+function transferFee(fromId, amount){
+  const from = accountById(fromId);
+  if(!from || !amount || amount <= 0) return 0;
+  return MOBILE_MONEY_TYPES.includes(from.type) ? Math.round(amount * 0.01) : 0;
+}
+function updateTransferFeeHint(){
+  const hint = document.getElementById('trFeeHint');
+  if(!hint) return;
+  const fromId = document.getElementById('trFrom').value;
+  const amount = Number(document.getElementById('trAmount').value);
+  const fee = transferFee(fromId, amount);
+  if(fee > 0){
+    hint.innerHTML = `⚠️ Frais mobile money (1%) : <b>${formatFCFA(fee)}</b> — le compte de destination recevra ${formatFCFA(amount - fee)}.`;
+  } else {
+    hint.textContent = '';
+  }
+}
+document.getElementById('trFrom').addEventListener('change', updateTransferFeeHint);
+document.getElementById('trAmount').addEventListener('input', updateTransferFeeHint);
 document.getElementById('transferForm').addEventListener('submit', e => {
   e.preventDefault();
   const fromId = document.getElementById('trFrom').value;
@@ -950,16 +1073,19 @@ document.getElementById('transferForm').addEventListener('submit', e => {
   }
   const from = accountById(fromId), to = accountById(toId);
   if(!from || !to) return;
+  const fee = transferFee(fromId, amount);
+  const received = amount - fee;
   from.balance -= amount;
-  to.balance += amount;
+  to.balance += received;
   DATA.transactions.push({
     id: genId('txn'), type:'transfert', amount, date: todayStr(),
-    accountId: fromId, toAccountId: toId, note, category:'', subcategory:'', personId:'foyer'
+    accountId: fromId, toAccountId: toId, note, category:'', subcategory:'', personId:'foyer', fee
   });
   saveData();
   e.target.reset();
+  document.getElementById('trFeeHint').textContent = '';
   renderAll();
-  showToast(`Transfert effectué : ${from.name} → ${to.name}`);
+  showToast(fee > 0 ? `Transfert effectué : ${from.name} → ${to.name} (frais 1% : ${formatFCFA(fee)})` : `Transfert effectué : ${from.name} → ${to.name}`);
 });
 
 /* ============ REVENUS & DÉPENSES ============ */
@@ -1031,7 +1157,7 @@ function deleteTransaction(id){
   } else if(t.type === 'transfert'){
     const from = accountById(t.accountId), to = accountById(t.toAccountId);
     if(from) from.balance += t.amount;
-    if(to) to.balance -= t.amount;
+    if(to) to.balance -= (t.amount - (Number(t.fee)||0));
   }
   DATA.transactions = DATA.transactions.filter(x => x.id !== id);
   saveData();
@@ -1116,7 +1242,7 @@ window.clearTxnFilters = clearTxnFilters;
 function txnRowHtml(t){
   const from = accountById(t.accountId);
   const to = accountById(t.toAccountId);
-  let icon = '↔️', title = 'Transfert', sub = `${from?from.name:'—'} → ${to?to.name:'—'}`, sign = '', cls = '';
+  let icon = '↔️', title = 'Transfert', sub = `${from?from.name:'—'} → ${to?to.name:'—'}${t.fee?' · frais 1% : '+formatFCFA(t.fee):''}`, sign = '', cls = '';
   if(t.type === 'revenu'){
     const info = categoryInfo(t.category, 'revenu');
     icon = info.icon; title = info.label + (t.note?` — ${escapeHtml(t.note)}`:'');
@@ -1132,7 +1258,7 @@ function txnRowHtml(t){
     sub = '';
     sign = t.type==='epargne_ajout' ? '-' : '+'; cls = t.type==='epargne_ajout' ? 'neg' : 'pos';
   }
-  const dateStr = new Date(t.date + 'T00:00:00').toLocaleDateString('fr-FR', {day:'numeric', month:'short', year:'numeric'});
+  const dateStr = formatDateLong(t.date);
   return `
     <div class="row-item">
       <div class="row-icon">${icon}</div>
@@ -1198,11 +1324,17 @@ function renderBudget(){
   document.getElementById('thr75').value = DATA.thresholds[1] ?? 75;
   document.getElementById('thr90').value = DATA.thresholds[2] ?? 90;
   const el = document.getElementById('budgetTrackList');
-  const entries = Object.entries(DATA.budgets || {});
+  let entries = Object.entries(DATA.budgets || {});
   if(!entries.length){
     el.innerHTML = `<div class="empty">Aucun budget défini pour le moment.</div>`;
     return;
   }
+  // Les catégories les plus proches (ou au-delà) de leur plafond remontent en premier.
+  entries = entries.slice().sort((a,b) => {
+    const pctA = a[1] > 0 ? sumAmount(expensesForMonth(key, a[0])) / a[1] : 0;
+    const pctB = b[1] > 0 ? sumAmount(expensesForMonth(key, b[0])) / b[1] : 0;
+    return pctB - pctA;
+  });
   el.innerHTML = entries.map(([catId, budget]) => {
     const info = categoryInfo(catId, 'depense');
     const spent = sumAmount(expensesForMonth(key, catId));
@@ -1251,28 +1383,35 @@ document.getElementById('newBillForm').addEventListener('submit', e => {
   renderAll();
   showToast('Facture ajoutée ✅');
 });
-function pickAccount(promptMessage){
+/* Sélecteur de compte en modale (remplace l'ancien prompt() numéroté). */
+function pickAccountModal(title, sub, onPicked){
   const accounts = DATA.accounts || [];
-  if(!accounts.length) return null;
-  const listText = accounts.map((a,i) => `${i+1}) ${a.name} (${formatFCFA(a.balance)})`).join('\n');
-  const answer = prompt(`${promptMessage}\n\n${listText}\n\nEntrez le numéro du compte :`, '1');
-  if(answer === null) return null;
-  const idx = parseInt(answer, 10) - 1;
-  return accounts[idx] || null;
+  if(!accounts.length){ alert('Aucun compte disponible.'); return; }
+  openModal({
+    title, sub, submitLabel:'Confirmer',
+    fields: [{id:'account', label:'Compte', type:'select', value:accounts[0].id,
+      options: accounts.map(a => ({value:a.id, label:`${accountTypeInfo(a.type).icon} ${a.name} (${formatFCFA(a.balance)})`}))}],
+    onSubmit(v){ const acc = accountById(v.account); if(acc) onPicked(acc); }
+  });
+}
+function payBillWithAccount(b, account){
+  account.balance -= b.amount;
+  const txn = {id: genId('txn'), type:'depense', amount:b.amount, date: todayStr(), category:'maison', subcategory:b.name, personId:'foyer', accountId:account.id, toAccountId:'', note:`Facture : ${b.name}`, recurringId:''};
+  DATA.transactions.push(txn);
+  b.paid = true;
+  b.paidTxnId = txn.id;
+  b.accountId = account.id;
+  saveData();
+  renderAll();
 }
 function toggleBillPaid(id){
   const b = (DATA.bills||[]).find(x => x.id === id);
   if(!b) return;
   if(!b.paid){
-    let account = accountById(b.accountId);
-    if(!account) account = pickAccount(`Avec quel compte payez-vous "${b.name}" (${formatFCFA(b.amount)}) ?`);
-    if(!account){ alert('Paiement annulé : aucun compte sélectionné.'); return; }
-    account.balance -= b.amount;
-    const txn = {id: genId('txn'), type:'depense', amount:b.amount, date: todayStr(), category:'maison', subcategory:b.name, personId:'foyer', accountId:account.id, toAccountId:'', note:`Facture : ${b.name}`, recurringId:''};
-    DATA.transactions.push(txn);
-    b.paid = true;
-    b.paidTxnId = txn.id;
-    b.accountId = account.id;
+    const account = accountById(b.accountId);
+    if(account){ payBillWithAccount(b, account); return; }
+    pickAccountModal(`Payer "${b.name}"`, `Montant : ${formatFCFA(b.amount)} — avec quel compte payez-vous cette facture ?`, acc => payBillWithAccount(b, acc));
+    return;
   } else {
     if(!confirm('Annuler le paiement de cette facture ? La dépense correspondante sera supprimée et le solde réajusté.')) return;
     const txn = (DATA.transactions||[]).find(t => t.id === b.paidTxnId);
@@ -1304,12 +1443,12 @@ function renderBills(){
   el.innerHTML = bills.length ? bills.map(b => {
     const n = daysUntil(b.due);
     let statusTag = b.paid ? '<span class="tag green">Payée</span>' : (n < 0 ? '<span class="tag red">En retard</span>' : '<span class="tag orange">À payer</span>');
-    const dateStr = new Date(b.due + 'T00:00:00').toLocaleDateString('fr-FR', {day:'numeric', month:'long', year:'numeric'});
+    const dateStr = formatDateLong(b.due);
     return `
       <div class="row-item ${!b.paid && n<0 ? 'alert-row':''}">
         <div class="row-icon">🧾</div>
         <div class="row-body">
-          <div class="row-title">${escapeHtml(b.name)} ${statusTag}</div>
+          <div class="row-title">${escapeHtml(b.name)} ${statusTag}${!b.paid?relativeDatePill(b.due):''}</div>
           <div class="row-sub">Échéance le ${dateStr}${!b.paid?` · ${n>=0?n+' j restants':Math.abs(n)+' j de retard'}`:''}</div>
         </div>
         <div class="row-amount neg">${formatFCFA(b.amount)}</div>
@@ -1338,41 +1477,51 @@ function goalById(id){ return (DATA.savingsGoals||[]).find(g => g.id === id); }
 function adjustGoal(id, direction){
   const g = goalById(id);
   if(!g) return;
-  const label = direction > 0 ? 'ajouter à' : 'retirer de';
-  const amountStr = prompt(`Montant à ${label} l'objectif "${g.name}" (FCFA) :`, '');
-  if(amountStr === null) return;
-  const amount = Number(amountStr);
-  if(!amount || amount <= 0){ alert('Montant invalide.'); return; }
-  if(direction < 0 && amount > g.current){ alert('Ce montant dépasse ce qui est actuellement épargné sur cet objectif.'); return; }
-  if(direction > 0 && amount > totalUsable()){
-    if(!confirm(`Attention : cela dépasse votre argent utilisable actuel (${formatFCFA(totalUsable())}). Continuer quand même ?`)) return;
-  }
-  g.current += direction * amount;
-  DATA.transactions.push({
-    id: genId('txn'), type: direction>0?'epargne_ajout':'epargne_retrait', amount, date: todayStr(),
-    category:'', subcategory:'', personId:'foyer', accountId:'', toAccountId:'', note:g.name, recurringId:''
+  const label = direction > 0 ? 'Ajouter à' : 'Retirer de';
+  openModal({
+    title: `${label} "${g.name}"`,
+    sub: `Épargné actuellement : ${formatFCFA(g.current)} / ${formatFCFA(g.target)}`,
+    submitLabel: direction>0 ? 'Ajouter' : 'Retirer',
+    fields: [{id:'amount', label:'Montant (FCFA)', type:'number', value:''}],
+    onSubmit(v){
+      const amount = Number(v.amount);
+      if(!amount || amount <= 0){ alert('Montant invalide.'); return; }
+      if(direction < 0 && amount > g.current){ alert('Ce montant dépasse ce qui est actuellement épargné sur cet objectif.'); return; }
+      if(direction > 0 && amount > totalUsable()){
+        if(!confirm(`Attention : cela dépasse votre argent utilisable actuel (${formatFCFA(totalUsable())}). Continuer quand même ?`)) return;
+      }
+      g.current += direction * amount;
+      DATA.transactions.push({
+        id: genId('txn'), type: direction>0?'epargne_ajout':'epargne_retrait', amount, date: todayStr(),
+        category:'', subcategory:'', personId:'foyer', accountId:'', toAccountId:'', note:g.name, recurringId:''
+      });
+      saveData();
+      renderAll();
+      if(direction>0 && g.current >= g.target) showToast(`🎉 Objectif "${g.name}" atteint !`);
+      else showToast('Épargne mise à jour ✅');
+    }
   });
-  saveData();
-  renderAll();
-  if(direction>0 && g.current >= g.target){
-    showToast(`🎉 Objectif "${g.name}" atteint !`);
-  } else {
-    showToast('Épargne mise à jour ✅');
-  }
 }
 window.adjustGoal = adjustGoal;
 function editGoal(id){
   const g = goalById(id);
   if(!g) return;
-  const newName = prompt('Nom de l\'objectif :', g.name);
-  if(newName === null) return;
-  const newTarget = prompt('Montant cible (FCFA) :', g.target);
-  if(newTarget === null) return;
-  if(newName.trim()) g.name = newName.trim();
-  const nt = Number(newTarget);
-  if(nt > 0) g.target = nt;
-  saveData();
-  renderAll();
+  openModal({
+    title: 'Modifier l\'objectif',
+    submitLabel: 'Enregistrer',
+    fields: [
+      {id:'name', label:'Nom', type:'text', value:g.name},
+      {id:'target', label:'Montant cible (FCFA)', type:'number', value:g.target},
+    ],
+    onSubmit(v){
+      if(v.name.trim()) g.name = v.name.trim();
+      const nt = Number(v.target);
+      if(nt > 0) g.target = nt;
+      saveData();
+      renderAll();
+      showToast('Objectif mis à jour ✅');
+    }
+  });
 }
 window.editGoal = editGoal;
 function deleteGoal(id){
@@ -1386,7 +1535,7 @@ function deleteGoal(id){
 window.deleteGoal = deleteGoal;
 function renderSavings(){
   const el = document.getElementById('goalsList');
-  const goals = DATA.savingsGoals || [];
+  const goals = (DATA.savingsGoals || []).slice().sort((a,b) => a.name.localeCompare(b.name,'fr'));
   const html = goals.length ? goals.map(g => {
     const pct = g.target > 0 ? Math.min(100, Math.round((g.current/g.target)*100)) : 0;
     return `
@@ -1439,30 +1588,48 @@ function debtById(id){ return (DATA.debts||[]).find(d => d.id === id); }
 function repayDebt(id){
   const d = debtById(id);
   if(!d) return;
-  const amountStr = prompt(`Montant du remboursement pour "${d.name}" (FCFA) :`, d.mensualite);
-  if(amountStr === null) return;
-  const amount = Number(amountStr);
-  if(!amount || amount <= 0){ alert('Montant invalide.'); return; }
-  const account = pickAccount(`Avec quel compte remboursez-vous "${d.name}" ?`);
-  if(!account){ alert('Remboursement annulé.'); return; }
-  account.balance -= amount;
-  d.restant = Math.max(0, d.restant - amount);
-  DATA.transactions.push({id: genId('txn'), type:'depense', amount, date: todayStr(), category:'dettes', subcategory:d.name, personId:'foyer', accountId:account.id, toAccountId:'', note:`Remboursement : ${d.name}`, recurringId:''});
-  saveData();
-  renderAll();
-  if(d.restant <= 0) showToast(`🎉 Dette "${d.name}" totalement remboursée !`);
-  else showToast('Remboursement enregistré ✅');
+  const accounts = DATA.accounts || [];
+  if(!accounts.length){ alert('Aucun compte disponible.'); return; }
+  openModal({
+    title: `Rembourser "${d.name}"`,
+    sub: `Restant dû : ${formatFCFA(d.restant)}`,
+    submitLabel: 'Enregistrer',
+    fields: [
+      {id:'amount', label:'Montant du remboursement (FCFA)', type:'number', value:d.mensualite},
+      {id:'account', label:'Compte utilisé', type:'select', value:accounts[0].id,
+        options: accounts.map(a => ({value:a.id, label:`${accountTypeInfo(a.type).icon} ${a.name} (${formatFCFA(a.balance)})`}))},
+    ],
+    onSubmit(v){
+      const amount = Number(v.amount);
+      if(!amount || amount <= 0){ alert('Montant invalide.'); return; }
+      const account = accountById(v.account);
+      if(!account) return;
+      account.balance -= amount;
+      d.restant = Math.max(0, d.restant - amount);
+      DATA.transactions.push({id: genId('txn'), type:'depense', amount, date: todayStr(), category:'dettes', subcategory:d.name, personId:'foyer', accountId:account.id, toAccountId:'', note:`Remboursement : ${d.name}`, recurringId:''});
+      saveData();
+      renderAll();
+      if(d.restant <= 0) showToast(`🎉 Dette "${d.name}" totalement remboursée !`);
+      else showToast('Remboursement enregistré ✅');
+    }
+  });
 }
 window.repayDebt = repayDebt;
 function editDebt(id){
   const d = debtById(id);
   if(!d) return;
-  const newRestant = prompt('Corriger le montant restant (FCFA) :', d.restant);
-  if(newRestant === null) return;
-  const nr = Number(newRestant);
-  if(!isNaN(nr) && nr>=0) d.restant = nr;
-  saveData();
-  renderAll();
+  openModal({
+    title: 'Corriger le montant restant',
+    submitLabel: 'Enregistrer',
+    fields: [{id:'restant', label:'Montant restant (FCFA)', type:'number', value:d.restant}],
+    onSubmit(v){
+      const nr = Number(v.restant);
+      if(!isNaN(nr) && nr>=0) d.restant = nr;
+      saveData();
+      renderAll();
+      showToast('Dette mise à jour ✅');
+    }
+  });
 }
 window.editDebt = editDebt;
 function deleteDebt(id){
@@ -1474,7 +1641,7 @@ function deleteDebt(id){
 window.deleteDebt = deleteDebt;
 function renderDebts(){
   const el = document.getElementById('debtsList');
-  const debts = DATA.debts || [];
+  const debts = (DATA.debts || []).slice().sort((a,b) => b.restant - a.restant);
   el.innerHTML = debts.length ? debts.map(d => {
     const pctPaid = d.initial > 0 ? Math.round(((d.initial-d.restant)/d.initial)*100) : 0;
     return `
@@ -1640,6 +1807,85 @@ function renderReportComparison(){
   document.getElementById('reportComparisonTable').innerHTML = rows;
 }
 
+/* ============ EXPORT PDF ============
+   Génère un PDF du mois affiché dans Rapports (revenus et dépenses séparés,
+   avec totaux) via jsPDF + jsPDF-AutoTable, chargés en CDN dans index.html.
+   Un formateur de nombres dédié évite l'espace insécable "fine" que produit
+   Intl.NumberFormat('fr-FR') — mal supporté par les polices PDF standard. */
+function formatFCFAPdf(n){
+  const v = Math.round(Number(n) || 0);
+  const neg = v < 0;
+  const s = Math.abs(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return (neg ? '-' : '') + s + ' FCFA';
+}
+function exportReportPDF(){
+  if(!window.jspdf || !window.jspdf.jsPDF){
+    alert('Le générateur de PDF est en cours de chargement, réessayez dans un instant.');
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const key = reportMonth;
+  const revenusTxns = (DATA.transactions||[]).filter(t => t.type==='revenu' && monthKeyOf(t.date)===key).sort((a,b)=>a.date.localeCompare(b.date));
+  const depensesTxns = expensesForMonth(key).sort((a,b)=>a.date.localeCompare(b.date));
+  const totalRevenus = sumAmount(revenusTxns);
+  const totalDepenses = sumAmount(depensesTxns);
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  doc.text('MA FAMILLE — Rapport mensuel', 14, 18);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(11);
+  doc.text(`Foyer : ${DATA.foyer.nom || '-'}`, 14, 26);
+  doc.text(`Période : ${monthLabel(key)}`, 14, 32);
+  doc.text(`Généré le ${formatDateLong(todayStr())}`, 14, 38);
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(12);
+  doc.text(`Revenus — total ${formatFCFAPdf(totalRevenus)}`, 14, 50);
+  doc.autoTable({
+    startY: 54,
+    head: [['Date','Catégorie','Personne','Compte','Montant']],
+    body: revenusTxns.length ? revenusTxns.map(t => [
+      t.date,
+      categoryInfo(t.category,'revenu').label,
+      personLabel(t.personId||'foyer'),
+      accountById(t.accountId) ? accountById(t.accountId).name : '-',
+      formatFCFAPdf(t.amount),
+    ]) : [['—','Aucun revenu ce mois','','','']],
+    styles:{fontSize:9},
+    headStyles:{fillColor:[193,89,46]},
+    margin:{left:14,right:14},
+  });
+
+  let y2 = doc.lastAutoTable.finalY + 12;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(12);
+  doc.text(`Dépenses — total ${formatFCFAPdf(totalDepenses)}`, 14, y2);
+  doc.autoTable({
+    startY: y2 + 4,
+    head: [['Date','Catégorie','Personne','Compte','Montant']],
+    body: depensesTxns.length ? depensesTxns.map(t => [
+      t.date,
+      categoryInfo(t.category,'depense').label + (t.subcategory ? ` (${t.subcategory})` : ''),
+      personLabel(t.personId||'foyer'),
+      accountById(t.accountId) ? accountById(t.accountId).name : '-',
+      formatFCFAPdf(t.amount),
+    ]) : [['—','Aucune dépense ce mois','','','']],
+    styles:{fontSize:9},
+    headStyles:{fillColor:[209,72,63]},
+    margin:{left:14,right:14},
+  });
+
+  const y3 = doc.lastAutoTable.finalY + 14;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(12);
+  doc.text(`Solde du mois : ${formatFCFAPdf(totalRevenus - totalDepenses)}`, 14, y3);
+
+  doc.save(`ma-famille-rapport-${key}.pdf`);
+}
+window.exportReportPDF = exportReportPDF;
+
 /* ============ PARAMÈTRES ============ */
 function renderSettings(){
   const soi = soiPersonne() || {prenom:'', nom:'', telephone:''};
@@ -1657,19 +1903,24 @@ function renderSettings(){
 function editProfile(){
   const soi = soiPersonne();
   if(!soi){ alert('Aucun profil trouvé.'); return; }
-  const newPrenom = prompt('Votre prénom :', soi.prenom);
-  if(newPrenom === null) return;
-  const newNom = prompt('Votre nom :', soi.nom || '');
-  if(newNom === null) return;
-  const newTel = prompt('Votre téléphone :', soi.telephone || '');
-  if(newTel === null) return;
-  soi.prenom = newPrenom.trim();
-  soi.nom = newNom.trim();
-  soi.telephone = newTel.trim();
-  saveData();
-  renderSettings();
-  renderDashboard();
-  showToast('Profil mis à jour ✅');
+  openModal({
+    title: 'Modifier mon profil',
+    submitLabel: 'Enregistrer',
+    fields: [
+      {id:'prenom', label:'Prénom', type:'text', value:soi.prenom},
+      {id:'nom', label:'Nom', type:'text', value:soi.nom||''},
+      {id:'telephone', label:'Téléphone', type:'tel', value:soi.telephone||''},
+    ],
+    onSubmit(v){
+      soi.prenom = v.prenom.trim();
+      soi.nom = v.nom.trim();
+      soi.telephone = v.telephone.trim();
+      saveData();
+      renderSettings();
+      renderDashboard();
+      showToast('Profil mis à jour ✅');
+    }
+  });
 }
 window.editProfile = editProfile;
 document.getElementById('newCategoryForm').addEventListener('submit', e => {
@@ -1775,10 +2026,10 @@ function renderDashboard(){
     ...upcomingRecItems,
   ].sort((a,b) => a.date.localeCompare(b.date));
   document.getElementById('dashUpcomingList').innerHTML = upcomingItems.length ? upcomingItems.slice(0,6).map(it => `
-    <div class="row-item"><div class="row-icon">📅</div><div class="row-body"><div class="row-title">${escapeHtml(it.label)}</div><div class="row-sub">${new Date(it.date+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}</div></div><div class="row-amount neg">${formatFCFA(it.amount)}</div></div>
+    <div class="row-item"><div class="row-icon">📅</div><div class="row-body"><div class="row-title">${escapeHtml(it.label)}${relativeDatePill(it.date)}</div><div class="row-sub">${new Date(it.date+'T00:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}</div></div><div class="row-amount neg">${formatFCFA(it.amount)}</div></div>
   `).join('') : `<div class="empty">Rien de prévu dans les prochains jours 👌</div>`;
   const accEl = document.getElementById('dashAccountsList');
-  accEl.innerHTML = (DATA.accounts||[]).map(a => {
+  accEl.innerHTML = (DATA.accounts||[]).slice().sort((a,b) => a.name.localeCompare(b.name,'fr')).map(a => {
     const t = accountTypeInfo(a.type);
     return `<div class="row-item"><div class="row-icon">${t.icon}</div><div class="row-body"><div class="row-title">${escapeHtml(a.name)}</div></div><div class="row-amount">${formatFCFA(a.balance)}</div></div>`;
   }).join('') || `<div class="empty">Aucun compte pour le moment.</div>`;
