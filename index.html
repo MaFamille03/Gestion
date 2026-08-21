@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Ma Famille — Gestion du foyer</title>
-<meta name="description" content="Application personnelle de gestion financière et familiale du foyer — budget, comptes, épargne, dettes, bébé, aide à la maison, prévisions." />
+<meta name="description" content="Application personnelle de gestion financière et familiale du foyer — budget, comptes, épargne, dettes, personnes du foyer, prévisions." />
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -25,68 +25,64 @@
     </div>
   </div>
 
-  <!-- ============ CRÉATION DU FOYER (première utilisation) ============ -->
+  <!-- ============ CRÉATION DU FOYER (questionnaire adaptatif, première utilisation) ============ -->
   <div id="setupScreen" class="login-screen" style="display:none;">
-    <form id="setupForm" class="login-card wide">
+    <form id="setupForm" class="login-card wide" onsubmit="return false;">
       <div class="login-brand"><span class="dot"></span>MA FAMILLE</div>
       <h2>Créons votre foyer</h2>
-      <p class="login-sub">Ces informations personnalisent l'application. Vous pourrez tout modifier plus tard dans Famille et Paramètres.</p>
-      <div class="setup-grid">
+      <p class="login-sub">Quelques questions pour adapter l'application à votre situation. Vous pourrez tout modifier plus tard dans Foyer et Paramètres.</p>
+
+      <div class="wizard-progress" id="wizardProgress"></div>
+
+      <!-- ÉTAPE 1 : nom du foyer + situation de logement -->
+      <div class="wizard-step" id="wizStep1">
+        <div class="wizard-steplabel">Étape 1 sur 4 — Votre foyer</div>
         <div class="field-group">
           <label class="field-label">Nom du foyer</label>
-          <input type="text" id="stFoyerNom" placeholder="Ex. Famille Kouassi" required>
+          <input type="text" id="stFoyerNom" placeholder="Ex. Foyer Kouassi, Chez moi…" required>
         </div>
-        <div class="field-group">
+        <div class="field-group" style="margin-top:14px;">
           <label class="field-label">Votre prénom</label>
-          <input type="text" id="stUserPrenom" placeholder="Votre prénom" required>
+          <input type="text" id="stMoiPrenom" placeholder="Votre prénom" required>
         </div>
-        <div class="field-group">
-          <label class="field-label">Votre nom</label>
-          <input type="text" id="stUserNom" placeholder="Votre nom">
-        </div>
-        <div class="field-group">
-          <label class="field-label">Téléphone (facultatif)</label>
-          <input type="tel" id="stUserTelephone" placeholder="07 00 00 00 00">
-        </div>
-        <div class="field-group">
-          <label class="field-label">👨 Prénom (homme)</label>
-          <input type="text" id="stHommePrenom" placeholder="Ex. Jean">
-        </div>
-        <div class="field-group">
-          <label class="field-label">👩 Prénom (femme)</label>
-          <input type="text" id="stFemmePrenom" placeholder="Ex. Marie">
+        <label class="field-label" style="display:block;margin-top:16px;">Comment décririez-vous votre foyer ?</label>
+        <div class="radio-card-grid" id="situationGrid">
+          <button type="button" class="radio-card" data-val="seul"><span class="rc-icon">🧍</span><span class="rc-label">Je vis seul(e)</span><span class="rc-desc">Un seul foyer, une seule personne</span></button>
+          <button type="button" class="radio-card" data-val="couple"><span class="rc-icon">💑</span><span class="rc-label">En couple</span><span class="rc-desc">Vous et votre conjoint(e)</span></button>
+          <button type="button" class="radio-card" data-val="famille"><span class="rc-icon">👨‍👩‍👧‍👦</span><span class="rc-label">Famille avec enfant(s)</span><span class="rc-desc">Avec ou sans conjoint(e)</span></button>
+          <button type="button" class="radio-card" data-val="autre"><span class="rc-icon">🏘️</span><span class="rc-label">Autre configuration</span><span class="rc-desc">Colocation, famille élargie…</span></button>
         </div>
       </div>
-      <label class="role-filter-toggle" style="font-size:12.5px;">
-        <input type="checkbox" id="stBebeCheck">
-        <span>👶 Un bébé fait partie du foyer</span>
-      </label>
-      <div class="setup-grid" id="stBebeFields" style="display:none;">
-        <div class="field-group">
-          <label class="field-label">Prénom du bébé</label>
-          <input type="text" id="stBebePrenom" placeholder="Ex. Emma">
+
+      <!-- ÉTAPE 2 : nombre de personnes -->
+      <div class="wizard-step" id="wizStep2">
+        <div class="wizard-steplabel">Étape 2 sur 4 — Composition</div>
+        <p class="login-sub">En comptant vous-même, combien de personnes vivent dans ce foyer ?</p>
+        <div class="stepper-count">
+          <button type="button" id="stCountMinus">−</button>
+          <div class="n" id="stCountValue">1</div>
+          <button type="button" id="stCountPlus">＋</button>
         </div>
-        <div class="field-group">
-          <label class="field-label">Date de naissance</label>
-          <input type="date" id="stBebeNaissance">
-        </div>
+        <p class="form-hint" style="text-align:center;">Vous pourrez ajouter ou retirer des personnes à tout moment depuis l'onglet Foyer.</p>
       </div>
-      <label class="role-filter-toggle" style="font-size:12.5px;">
-        <input type="checkbox" id="stAideCheck">
-        <span>👧 Une aide à la maison fait partie du foyer</span>
-      </label>
-      <div class="setup-grid" id="stAideFields" style="display:none;">
-        <div class="field-group">
-          <label class="field-label">Prénom</label>
-          <input type="text" id="stAidePrenom" placeholder="Ex. Grâce">
-        </div>
-        <div class="field-group">
-          <label class="field-label">Rémunération mensuelle</label>
-          <input type="number" id="stAideRemuneration" placeholder="0" min="0">
-        </div>
+
+      <!-- ÉTAPE 3 : profil de chaque personne (généré dynamiquement) -->
+      <div class="wizard-step" id="wizStep3">
+        <div class="wizard-steplabel">Étape 3 sur 4 — Les personnes du foyer</div>
+        <div id="personFormsContainer"></div>
       </div>
+
+      <!-- ÉTAPE 4 : récapitulatif -->
+      <div class="wizard-step" id="wizStep4">
+        <div class="wizard-steplabel">Étape 4 sur 4 — Vérification</div>
+        <div id="wizardRecap"></div>
+      </div>
+
       <div class="login-error" id="setupError"></div>
-      <button type="submit" class="cta-inline login-btn" id="setupSubmitBtn">Créer mon foyer</button>
+      <div class="wizard-nav">
+        <button type="button" class="icon-btn wide" id="wizPrevBtn" style="visibility:hidden;">‹ Précédent</button>
+        <button type="button" class="cta-inline login-btn" id="wizNextBtn" style="width:auto;">Suivant ›</button>
+      </div>
     </form>
   </div>
 
@@ -99,14 +95,7 @@
         <div class="tab" id="navAccounts" onclick="switchView('accounts')">Comptes</div>
         <div class="tab" id="navTransactions" onclick="switchView('transactions')">Transactions</div>
         <div class="tab" id="navBudget" onclick="switchView('budget')">Budget</div>
-        <div class="tab" id="navBills" onclick="switchView('bills')">Factures</div>
-        <div class="tab" id="navSavings" onclick="switchView('savings')">Épargne</div>
-        <div class="tab" id="navDebts" onclick="switchView('debts')">Dettes</div>
-        <div class="tab" id="navFamily" onclick="switchView('family')">Famille</div>
-        <div class="tab" id="navForecast" onclick="switchView('forecast')">Prévisions</div>
-        <div class="tab" id="navCalendar" onclick="switchView('calendar')">Calendrier</div>
-        <div class="tab" id="navReports" onclick="switchView('reports')">Rapports</div>
-        <div class="tab" id="navSettings" onclick="switchView('settings')">Paramètres</div>
+        <div class="tab" id="navPlus" onclick="switchView('plus')">Plus</div>
       </div>
       <div class="topbar-actions">
         <span class="sync-badge" id="syncBadge">🔄 connexion…</span>
@@ -219,9 +208,7 @@
           <form id="newIncomeForm" class="form-grid">
             <div class="field-group"><label class="field-label">Montant (FCFA)</label><input type="number" id="inAmount" min="1" required></div>
             <div class="field-group"><label class="field-label">Date</label><input type="date" id="inDate" required></div>
-            <div class="field-group"><label class="field-label">Personne</label>
-              <select id="inPerson"><option value="homme">👨 Homme</option><option value="femme">👩 Femme</option><option value="famille">👨‍👩‍👧‍👦 Foyer</option><option value="autre">Autre</option></select>
-            </div>
+            <div class="field-group"><label class="field-label">Personne concernée</label><select id="inPersonId"></select></div>
             <div class="field-group"><label class="field-label">Catégorie</label><select id="inCategory"></select></div>
             <div class="field-group"><label class="field-label">Vers quel compte</label><select id="inAccount"></select></div>
             <div class="field-group"><label class="field-label">Note (facultatif)</label><input type="text" id="inNote" placeholder="Ex. Salaire du mois"></div>
@@ -236,9 +223,7 @@
             <div class="field-group"><label class="field-label">Date</label><input type="date" id="exDate" required></div>
             <div class="field-group"><label class="field-label">Catégorie</label><select id="exCategory"></select></div>
             <div class="field-group"><label class="field-label">Sous-catégorie (facultatif)</label><input type="text" id="exSubcategory" placeholder="Ex. Couches"></div>
-            <div class="field-group"><label class="field-label">Concerne</label>
-              <select id="exScope"><option value="famille">👨‍👩‍👧‍👦 Famille</option><option value="homme">👨 Homme (personnel)</option><option value="femme">👩 Femme (personnel)</option><option value="bebe">👶 Bébé</option><option value="aide">👧 Aide à la maison</option></select>
-            </div>
+            <div class="field-group"><label class="field-label">Concerne</label><select id="exPersonId"></select></div>
             <div class="field-group"><label class="field-label">Payé avec</label><select id="exAccount"></select></div>
             <div class="field-group"><label class="field-label">Note (facultatif)</label><input type="text" id="exNote" placeholder="Ex. Marché du week-end"></div>
             <label class="role-filter-toggle"><input type="checkbox" id="exRecurrent"><span>Dépense récurrente (chaque mois)</span></label>
@@ -288,8 +273,24 @@
         </div>
       </div>
 
+      <!-- ============ PLUS (menu secondaire) ============ -->
+      <div id="view-plus" class="view">
+        <div class="hero"><div><h1>Plus</h1><p>Tout le reste de votre gestion du foyer.</p></div></div>
+        <div class="plus-grid">
+          <button type="button" class="plus-card" onclick="switchView('bills')"><span class="pc-icon">🧾</span><span class="pc-label">Factures</span><span class="pc-desc">Échéances à venir</span></button>
+          <button type="button" class="plus-card" onclick="switchView('savings')"><span class="pc-icon">🐷</span><span class="pc-label">Épargne</span><span class="pc-desc">Vos objectifs</span></button>
+          <button type="button" class="plus-card" onclick="switchView('debts')"><span class="pc-icon">💳</span><span class="pc-label">Dettes</span><span class="pc-desc">Crédits en cours</span></button>
+          <button type="button" class="plus-card" onclick="switchView('foyer')"><span class="pc-icon">👪</span><span class="pc-label">Foyer</span><span class="pc-desc">Les personnes du foyer</span></button>
+          <button type="button" class="plus-card" onclick="switchView('forecast')"><span class="pc-icon">📈</span><span class="pc-label">Prévisions</span><span class="pc-desc">Ce qui arrive bientôt</span></button>
+          <button type="button" class="plus-card" onclick="switchView('calendar')"><span class="pc-icon">📅</span><span class="pc-label">Calendrier</span><span class="pc-desc">Vue mensuelle</span></button>
+          <button type="button" class="plus-card" onclick="switchView('reports')"><span class="pc-icon">📊</span><span class="pc-label">Rapports</span><span class="pc-desc">Analyse mensuelle</span></button>
+          <button type="button" class="plus-card" onclick="switchView('settings')"><span class="pc-icon">⚙️</span><span class="pc-label">Paramètres</span><span class="pc-desc">Profil &amp; sauvegarde</span></button>
+        </div>
+      </div>
+
       <!-- ============ FACTURES ============ -->
       <div id="view-bills" class="view">
+        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
         <div class="hero"><div><h1>Factures</h1><p>Prévoyez et suivez vos échéances — l'application ne paie rien automatiquement.</p></div></div>
         <div class="card">
           <h2>+ Nouvelle facture</h2>
@@ -309,6 +310,7 @@
 
       <!-- ============ ÉPARGNE ============ -->
       <div id="view-savings" class="view">
+        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
         <div class="hero"><div><h1>Épargne</h1><p>Vos objectifs — cet argent reste compté dans vos comptes mais est mis de côté.</p></div></div>
         <div class="card">
           <h2>+ Nouvel objectif</h2>
@@ -327,6 +329,7 @@
 
       <!-- ============ DETTES ============ -->
       <div id="view-debts" class="view">
+        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
         <div class="hero"><div><h1>Dettes &amp; crédits</h1><p>Suivez ce qu'il reste à rembourser.</p></div></div>
         <div class="card">
           <h2>+ Nouvelle dette</h2>
@@ -348,44 +351,39 @@
         </div>
       </div>
 
-      <!-- ============ FAMILLE ============ -->
-      <div id="view-family" class="view">
-        <div class="hero"><div><h1>Famille</h1><p>Membres du foyer, bébé et aide à la maison.</p></div></div>
+      <!-- ============ FOYER ============ -->
+      <div id="view-foyer" class="view">
+        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
+        <div class="hero"><div><h1 id="foyerTitle">Foyer</h1><p>Les personnes qui composent votre foyer, quelle que soit sa taille.</p></div></div>
         <div class="card">
-          <h2>Membres du foyer</h2>
-          <form id="familyForm" class="form-grid">
-            <div class="field-group"><label class="field-label">Nom du foyer</label><input type="text" id="fmFoyerNom" required></div>
-            <div class="field-group"><label class="field-label">👨 Prénom (homme)</label><input type="text" id="fmHommePrenom"></div>
-            <div class="field-group"><label class="field-label">👩 Prénom (femme)</label><input type="text" id="fmFemmePrenom"></div>
-            <label class="role-filter-toggle"><input type="checkbox" id="fmBebeCheck"><span>👶 Un bébé fait partie du foyer</span></label>
-            <div class="setup-grid" id="fmBebeFields" style="display:none;grid-column:1/-1;">
-              <div class="field-group"><label class="field-label">Prénom du bébé</label><input type="text" id="fmBebePrenom"></div>
-              <div class="field-group"><label class="field-label">Date de naissance</label><input type="date" id="fmBebeNaissance"></div>
-            </div>
-            <label class="role-filter-toggle"><input type="checkbox" id="fmAideCheck"><span>👧 Une aide à la maison fait partie du foyer</span></label>
-            <div class="setup-grid" id="fmAideFields" style="display:none;grid-column:1/-1;">
-              <div class="field-group"><label class="field-label">Prénom</label><input type="text" id="fmAidePrenom"></div>
-              <div class="field-group"><label class="field-label">Rôle</label><input type="text" id="fmAideRole" placeholder="Ex. Aide ménagère"></div>
-              <div class="field-group"><label class="field-label">Fréquence</label><input type="text" id="fmAideFrequence" placeholder="Ex. Tous les jours"></div>
-              <div class="field-group"><label class="field-label">Rémunération (FCFA)</label><input type="number" id="fmAideRemuneration" min="0"></div>
-              <div class="field-group"><label class="field-label">Transport (FCFA)</label><input type="number" id="fmAideTransport" min="0"></div>
-              <div class="field-group"><label class="field-label">Autres frais (FCFA)</label><input type="number" id="fmAideAutres" min="0"></div>
+          <h2>Informations générales</h2>
+          <form id="foyerInfoForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Nom du foyer</label><input type="text" id="fyNom" required></div>
+            <div class="field-group"><label class="field-label">Situation</label>
+              <select id="fySituation">
+                <option value="seul">🧍 Je vis seul(e)</option>
+                <option value="couple">💑 En couple</option>
+                <option value="famille">👨‍👩‍👧‍👦 Famille avec enfant(s)</option>
+                <option value="autre">🏘️ Autre configuration</option>
+              </select>
             </div>
             <button type="submit" class="cta-inline form-submit">Enregistrer</button>
           </form>
         </div>
-        <div class="card" id="babyCard" style="display:none;">
-          <h2>👶 Bébé</h2>
-          <div id="babyStats"></div>
+        <div class="card">
+          <h2>Personnes du foyer <span class="card-h2-right"><button type="button" class="icon-btn wide" onclick="openAddPerson()">＋ Ajouter une personne</button></span></h2>
+          <div id="personnesList"></div>
+          <div id="addPersonFormWrap" style="display:none;margin-top:14px;"></div>
         </div>
-        <div class="card" id="aideCard" style="display:none;">
-          <h2>👧 Aide à la maison</h2>
-          <div id="aideStats"></div>
+        <div class="card" id="pastPersonsCard" style="display:none;">
+          <h2>Personnes parties du foyer</h2>
+          <div id="pastPersonnesList"></div>
         </div>
       </div>
 
       <!-- ============ PRÉVISIONS ============ -->
       <div id="view-forecast" class="view">
+        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
         <div class="hero"><div><h1>Prévisions financières</h1><p>Ce qui arrive dans les prochains jours, à partir de vos comptes, factures et récurrences.</p></div></div>
         <div class="card">
           <div class="cal-header">
@@ -399,6 +397,7 @@
 
       <!-- ============ CALENDRIER ============ -->
       <div id="view-calendar" class="view">
+        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
         <div class="hero"><div><h1>Calendrier financier</h1><p>Revenus, dépenses, factures et récurrences du mois.</p></div></div>
         <div class="card">
           <div class="cal-header">
@@ -417,6 +416,7 @@
 
       <!-- ============ RAPPORTS ============ -->
       <div id="view-reports" class="view">
+        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
         <div class="hero"><div><h1>Rapport mensuel</h1><p>Vue d'ensemble et évolution de votre budget.</p></div></div>
         <div class="card">
           <div class="cal-header">
@@ -444,6 +444,7 @@
 
       <!-- ============ PARAMÈTRES ============ -->
       <div id="view-settings" class="view">
+        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
         <div class="hero"><div><h1>Paramètres</h1><p>Profil, catégories personnalisées et sauvegarde.</p></div></div>
         <div class="card">
           <h2>Profil</h2>
