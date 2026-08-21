@@ -226,7 +226,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
   box-shadow:var(--shadow);width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;
   margin:auto 0;flex:none;
 }
-.login-card.wide{max-width:560px;}
+.login-card.wide{max-width:860px;}
 .login-brand{font-weight:800;font-size:16px;display:flex;align-items:center;gap:8px;margin-bottom:4px;}
 .login-brand .dot{width:10px;height:10px;border-radius:4px;background:var(--grad);}
 .login-card h2{margin:0;font-size:20px;}
@@ -256,8 +256,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
 .wizard-step.active{display:block;animation:wizardIn .28s ease;}
 @keyframes wizardIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
 .wizard-nav{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:20px;}
-.radio-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0 4px;}
+.radio-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0 4px;}
 @media (max-width:520px){.radio-card-grid{grid-template-columns:1fr;}}
+#personFormsContainer{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px;align-items:start;}
+@media (max-width:640px){#personFormsContainer{grid-template-columns:1fr;}}
 .radio-card{
   all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:4px;
   padding:16px;border:1.5px solid var(--border);border-radius:14px;background:var(--surface);
@@ -330,6 +332,34 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
 .person-stats .ps .v{font-weight:700;font-size:12.5px;margin-top:2px;}
 .person-actions{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end;}
 .toggle-past-link{background:none;border:none;color:var(--terracotta);font-size:12px;cursor:pointer;padding:0;font-family:inherit;font-weight:600;}
+/* ============ MODALE (Userforms) ============ */
+.modal-overlay{
+  position:fixed;inset:0;z-index:200;display:none;flex-direction:column;align-items:center;
+  overflow-y:auto;background:rgba(43,33,24,0.55);backdrop-filter:blur(2px);padding:40px 20px;
+}
+.modal-overlay.show{display:flex;}
+.modal-card{
+  background:var(--surface);border-radius:18px;padding:26px;box-shadow:var(--shadow);
+  width:100%;max-width:440px;margin:auto 0;flex:none;
+}
+.modal-card h3{margin:0 0 4px;font-size:17px;font-family:'Manrope',sans-serif;}
+.modal-sub{margin:0 0 16px;color:var(--muted);font-size:12.5px;line-height:1.5;}
+.modal-fields{display:flex;flex-direction:column;gap:12px;}
+.modal-actions{display:flex;gap:10px;margin-top:18px;}
+.modal-actions .cta-inline{flex:1;text-align:center;}
+.modal-close{
+  all:unset;cursor:pointer;float:right;width:26px;height:26px;border-radius:9px;display:flex;
+  align-items:center;justify-content:center;color:var(--muted);font-size:14px;
+}
+.modal-close:hover{background:var(--surface-soft);color:var(--red);}
+/* ============ DATES (badges relatifs) ============ */
+.date-pill{
+  display:inline-flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;
+  border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle;text-transform:uppercase;letter-spacing:.03em;
+}
+.date-pill.today{color:var(--teal);background:rgba(27,110,99,0.12);}
+.date-pill.soon{color:var(--orange);background:rgba(226,169,58,0.16);}
+.date-pill.late{color:var(--red);background:rgba(209,72,63,0.12);}
 /* ============ MOBILE (fin de fichier pour primer sur les règles ci-dessus) ============ */
 @media (max-width:640px){
   .topbar{padding:10px 12px;gap:8px;}
