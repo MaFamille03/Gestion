@@ -29,6 +29,19 @@ const db = firebase.firestore();
    ~20-30s, alors que tout le reste du site est instantané). Cette option force
    la détection immédiate du bon mode de connexion au lieu d'attendre l'échec. */
 db.settings({ experimentalAutoDetectLongPolling: true });
+/* Persistance hors-ligne : garde une copie de vos données sur l'appareil
+   (IndexedDB) pour pouvoir continuer à consulter — et modifier — votre foyer
+   sans connexion internet ; tout se resynchronise automatiquement avec
+   Firestore dès que le réseau revient. Utile sur un réseau mobile instable. */
+db.enablePersistence({synchronizeTabs:true}).catch(err => {
+  if(err.code === 'failed-precondition'){
+    console.warn('Persistance hors-ligne indisponible (plusieurs onglets ouverts sans synchronisation).');
+  } else if(err.code === 'unimplemented'){
+    console.warn('Persistance hors-ligne non supportée par ce navigateur.');
+  } else {
+    console.warn('Persistance hors-ligne : erreur', err);
+  }
+});
 /* Chaque compte (email + mot de passe) a son propre document Firestore,
    identifié par son uid Firebase Auth — voir onAuthStateChanged plus bas.
    Tant que personne n'est connecté, DOC_REF reste null : aucune lecture ni
@@ -199,7 +212,7 @@ function openModal(opts){
         <div class="modal-fields">${fieldsHtml}</div>
         <div class="modal-actions">
           <button type="submit" class="cta-inline">${escapeHtml(opts.submitLabel||'Enregistrer')}</button>
-          <button type="button" class="icon-btn wide" onclick="closeModal()">Annuler</button>
+          ${opts.hideCancel ? '' : `<button type="button" class="icon-btn wide" onclick="closeModal()">Annuler</button>`}
         </div>
       </form>
     </div>`;
@@ -244,6 +257,32 @@ window.closeModal = closeModal;
 document.getElementById('modalOverlay').addEventListener('click', e => {
   if(e.target.id === 'modalOverlay') closeModal();
 });
+/* confirmModal()/alertModal() : remplacent respectivement window.confirm() et
+   window.alert() par la même modale centrée (Userform) que le reste du site,
+   pour une expérience 100% cohérente, sans aucune fenêtre native. */
+function confirmModal(message, onConfirm, opts){
+  opts = opts || {};
+  openModal({
+    title: opts.title || 'Confirmer',
+    sub: message,
+    submitLabel: opts.submitLabel || 'Confirmer',
+    fields: [],
+    onSubmit(){ onConfirm(); }
+  });
+}
+window.confirmModal = confirmModal;
+function alertModal(message, opts){
+  opts = opts || {};
+  openModal({
+    title: opts.title || 'Information',
+    sub: message,
+    submitLabel: 'OK',
+    hideCancel: true,
+    fields: [],
+    onSubmit(){ if(opts.then) opts.then(); }
+  });
+}
+window.alertModal = alertModal;
 function initials(name){
   const c = (name||'').trim().slice(0,1).toUpperCase();
   return c || '?';
@@ -404,7 +443,7 @@ function saveData(){
   DOC_REF.set(DATA).then(() => setSyncBadge('ok')).catch(err => {
     console.error('Erreur de sauvegarde Firestore :', err);
     setSyncBadge('err');
-    alert('La sauvegarde a échoué. Vérifiez votre connexion internet et réessayez. (Détail dans la console F12)');
+    alertModal('La sauvegarde a échoué. Vérifiez votre connexion internet et réessayez. (Détail dans la console F12)');
   });
 }
 
@@ -725,8 +764,8 @@ function openDeleteAccountModal(){
       {id:'confirm', label:'Je comprends que cette action est irréversible', type:'checkbox', value:false},
     ],
     onSubmit(v){
-      if(!v.confirm){ alert('Veuillez cocher la case de confirmation.'); return; }
-      if(!v.password){ alert('Mot de passe requis.'); return; }
+      if(!v.confirm){ alertModal('Veuillez cocher la case de confirmation.'); return; }
+      if(!v.password){ alertModal('Mot de passe requis.'); return; }
       const credential = firebase.auth.EmailAuthProvider.credential(user.email, v.password);
       const uid = user.uid;
       user.reauthenticateWithCredential(credential)
@@ -738,7 +777,7 @@ function openDeleteAccountModal(){
         })
         .catch(err => {
           console.error('Erreur de suppression de compte :', err);
-          alert(authErrorMessage(err));
+          alertModal(authErrorMessage(err));
         });
     }
   });
@@ -753,6 +792,29 @@ function togglePasswordVisibility(inputId, btn){
   btn.textContent = show ? '🙈' : '👁';
 }
 window.togglePasswordVisibility = togglePasswordVisibility;
+/* Mot de passe oublié : envoie un e-mail Firebase standard contenant un lien
+   pour en choisir un nouveau. Aucune donnée n'est modifiée ici — c'est
+   Firebase qui gère l'envoi et la validation du lien. */
+function openForgotPasswordModal(){
+  const loginEmailEl = document.getElementById('loginEmail');
+  const prefill = loginEmailEl ? loginEmailEl.value.trim() : '';
+  openModal({
+    title: 'Mot de passe oublié',
+    sub: 'Entrez votre adresse e-mail : si un compte existe, vous recevrez un lien pour choisir un nouveau mot de passe.',
+    submitLabel: 'Envoyer le lien',
+    fields: [{id:'email', label:'Adresse e-mail', type:'email', value:prefill}],
+    onSubmit(v){
+      const email = (v.email||'').trim();
+      if(!email){ alertModal('Adresse e-mail requise.'); return; }
+      auth.sendPasswordResetEmail(email).then(() => {
+        alertModal(`Un e-mail vient d'être envoyé à ${email} avec un lien pour choisir un nouveau mot de passe. Pensez à vérifier vos courriers indésirables.`, {title:'E-mail envoyé ✅'});
+      }).catch(err => {
+        alertModal(authErrorMessage(err));
+      });
+    }
+  });
+}
+window.openForgotPasswordModal = openForgotPasswordModal;
 
 /* ============ SYNCHRONISATION ============
    Se déclenche à chaque changement d'état de connexion (connexion,
@@ -1006,7 +1068,7 @@ function openAddPerson(){
     conditional: {trigger:'relation', showValue:'aide_domestique', fieldIds:['role','frequence','remuneration','transport','autres']},
     onSubmit(v){
       const prenom = v.prenom.trim();
-      if(!prenom){ alert('Le prénom est obligatoire.'); return; }
+      if(!prenom){ alertModal('Le prénom est obligatoire.'); return; }
       const isAide = v.relation === 'aide_domestique';
       const p = {
         id: genId('p'), prenom, nom:'', relation:v.relation,
@@ -1072,14 +1134,15 @@ window.editPerson = editPerson;
 function deactivatePerson(id){
   const p = personById(id);
   if(!p) return;
-  if(p.relation === 'soi'){ alert('Vous ne pouvez pas vous retirer vous-même du foyer.'); return; }
-  if(!confirm(`Faire partir "${p.prenom}" du foyer ? Son historique financier (transactions passées) sera entièrement conservé — cette action est réversible depuis "Personnes parties du foyer".`)) return;
-  p.presente = false;
-  p.dateDepart = todayStr();
-  saveData();
-  renderAll();
-  renderFoyer();
-  showToast(`${p.prenom} est marqué(e) comme parti(e) du foyer.`);
+  if(p.relation === 'soi'){ alertModal('Vous ne pouvez pas vous retirer vous-même du foyer.'); return; }
+  confirmModal(`Faire partir "${p.prenom}" du foyer ? Son historique financier (transactions passées) sera entièrement conservé — cette action est réversible depuis "Personnes parties du foyer".`, () => {
+    p.presente = false;
+    p.dateDepart = todayStr();
+    saveData();
+    renderAll();
+    renderFoyer();
+    showToast(`${p.prenom} est marqué(e) comme parti(e) du foyer.`);
+  }, {title:'Faire partir du foyer', submitLabel:'Faire partir'});
 }
 window.deactivatePerson = deactivatePerson;
 function reactivatePerson(id){
@@ -1187,13 +1250,14 @@ function deleteAccount(id){
   const a = accountById(id);
   if(!a) return;
   if((DATA.accounts||[]).length <= 1){
-    alert('Impossible de supprimer le dernier moyen financier restant.');
+    alertModal('Impossible de supprimer le dernier moyen financier restant.');
     return;
   }
-  if(!confirm(`Supprimer "${a.name}" ? Son solde (${formatFCFA(a.balance)}) sera perdu de votre total. Cette action est irréversible.`)) return;
-  DATA.accounts = DATA.accounts.filter(x => x.id !== id);
-  saveData();
-  renderAll();
+  confirmModal(`Supprimer "${a.name}" ? Son solde (${formatFCFA(a.balance)}) sera perdu de votre total. Cette action est irréversible.`, () => {
+    DATA.accounts = DATA.accounts.filter(x => x.id !== id);
+    saveData();
+    renderAll();
+  }, {title:'Supprimer ce compte', submitLabel:'Supprimer'});
 }
 window.deleteAccount = deleteAccount;
 function transferFee(fromId, amount){
@@ -1222,7 +1286,7 @@ document.getElementById('transferForm').addEventListener('submit', e => {
   const amount = Number(document.getElementById('trAmount').value);
   const note = document.getElementById('trNote').value.trim();
   if(!fromId || !toId || fromId === toId || !amount || amount <= 0) {
-    alert('Choisissez deux comptes différents et un montant valide.');
+    alertModal('Choisissez deux comptes différents et un montant valide.');
     return;
   }
   const from = accountById(fromId), to = accountById(toId);
@@ -1254,7 +1318,7 @@ document.getElementById('newIncomeForm').addEventListener('submit', e => {
   const accountId = document.getElementById('inAccount').value;
   const note = document.getElementById('inNote').value.trim();
   const recurrent = document.getElementById('inRecurrent').checked;
-  if(!amount || amount <= 0 || !date || !accountId){ alert('Vérifiez le montant, la date et le compte.'); return; }
+  if(!amount || amount <= 0 || !date || !accountId){ alertModal('Vérifiez le montant, la date et le compte.'); return; }
   const account = accountById(accountId);
   if(!account) return;
   let recurringId = '';
@@ -1282,7 +1346,7 @@ document.getElementById('newExpenseForm').addEventListener('submit', e => {
   const accountId = document.getElementById('exAccount').value;
   const note = document.getElementById('exNote').value.trim();
   const recurrent = document.getElementById('exRecurrent').checked;
-  if(!amount || amount <= 0 || !date || !accountId){ alert('Vérifiez le montant, la date et le compte.'); return; }
+  if(!amount || amount <= 0 || !date || !accountId){ alertModal('Vérifiez le montant, la date et le compte.'); return; }
   const account = accountById(accountId);
   if(!account) return;
   let recurringId = '';
@@ -1303,19 +1367,20 @@ document.getElementById('newExpenseForm').addEventListener('submit', e => {
 function deleteTransaction(id){
   const t = (DATA.transactions||[]).find(x => x.id === id);
   if(!t) return;
-  if(!confirm('Supprimer ce mouvement ? Le solde du compte concerné sera réajusté.')) return;
-  if(t.type === 'revenu'){
-    const a = accountById(t.accountId); if(a) a.balance -= t.amount;
-  } else if(t.type === 'depense'){
-    const a = accountById(t.accountId); if(a) a.balance += t.amount;
-  } else if(t.type === 'transfert'){
-    const from = accountById(t.accountId), to = accountById(t.toAccountId);
-    if(from) from.balance += t.amount;
-    if(to) to.balance -= (t.amount - (Number(t.fee)||0));
-  }
-  DATA.transactions = DATA.transactions.filter(x => x.id !== id);
-  saveData();
-  renderAll();
+  confirmModal('Supprimer ce mouvement ? Le solde du compte concerné sera réajusté.', () => {
+    if(t.type === 'revenu'){
+      const a = accountById(t.accountId); if(a) a.balance -= t.amount;
+    } else if(t.type === 'depense'){
+      const a = accountById(t.accountId); if(a) a.balance += t.amount;
+    } else if(t.type === 'transfert'){
+      const from = accountById(t.accountId), to = accountById(t.toAccountId);
+      if(from) from.balance += t.amount;
+      if(to) to.balance -= (t.amount - (Number(t.fee)||0));
+    }
+    DATA.transactions = DATA.transactions.filter(x => x.id !== id);
+    saveData();
+    renderAll();
+  }, {title:'Supprimer ce mouvement', submitLabel:'Supprimer'});
 }
 window.deleteTransaction = deleteTransaction;
 
@@ -1348,9 +1413,9 @@ function recordRecurring(id){
   const r = (DATA.recurring||[]).find(x => x.id === id);
   if(!r) return;
   const key = currentMonthKey();
-  if(r.lastRecordedMonth === key){ alert('Déjà enregistré ce mois-ci.'); return; }
+  if(r.lastRecordedMonth === key){ alertModal('Déjà enregistré ce mois-ci.'); return; }
   const account = accountById(r.accountId);
-  if(!account){ alert('Le compte associé à cette récurrence n\'existe plus.'); return; }
+  if(!account){ alertModal('Le compte associé à cette récurrence n\'existe plus.'); return; }
   const date = dateForDayInMonth(key, r.day);
   const personId = r.personId || 'foyer';
   if(r.type === 'revenu'){
@@ -1375,10 +1440,11 @@ function toggleFixedCharge(id){
 }
 window.toggleFixedCharge = toggleFixedCharge;
 function deleteRecurring(id){
-  if(!confirm('Supprimer cette récurrence ? Les transactions déjà enregistrées restent intactes.')) return;
-  DATA.recurring = (DATA.recurring||[]).filter(x => x.id !== id);
-  saveData();
-  renderAll();
+  confirmModal('Supprimer cette récurrence ? Les transactions déjà enregistrées restent intactes.', () => {
+    DATA.recurring = (DATA.recurring||[]).filter(x => x.id !== id);
+    saveData();
+    renderAll();
+  }, {title:'Supprimer cette récurrence', submitLabel:'Supprimer'});
 }
 window.deleteRecurring = deleteRecurring;
 
@@ -1387,12 +1453,18 @@ function clearTxnFilters(){
   document.getElementById('txnFilterType').value = 'all';
   document.getElementById('txnFilterMonth').value = '';
   document.getElementById('txnFilterCategory').value = '';
+  const searchEl = document.getElementById('txnFilterSearch');
+  if(searchEl) searchEl.value = '';
   renderTransactions();
 }
 window.clearTxnFilters = clearTxnFilters;
 ['txnFilterType','txnFilterMonth','txnFilterCategory'].forEach(id => {
   document.getElementById(id).addEventListener('change', renderTransactions);
 });
+/* Recherche libre (note, sous-catégorie, catégorie, personne, compte) —
+   en plus des filtres existants, sans les remplacer. */
+const txnFilterSearchEl = document.getElementById('txnFilterSearch');
+if(txnFilterSearchEl) txnFilterSearchEl.addEventListener('input', renderTransactions);
 function txnRowHtml(t){
   const from = accountById(t.accountId);
   const to = accountById(t.toAccountId);
@@ -1424,17 +1496,42 @@ function txnRowHtml(t){
       <div class="row-actions"><button class="icon-btn danger" title="Supprimer" onclick="deleteTransaction('${t.id}')">🗑</button></div>
     </div>`;
 }
+function transactionSearchText(t){
+  const type = t.type === 'revenu' ? 'revenu' : (t.type === 'depense' ? 'depense' : '');
+  const cat = type ? categoryInfo(t.category, type).label : '';
+  const acc = accountById(t.accountId) ? accountById(t.accountId).name : '';
+  return [t.note, t.subcategory, cat, personLabel(t.personId||'foyer'), acc].filter(Boolean).join(' ').toLowerCase();
+}
 function renderTransactions(){
   const typeFilter = document.getElementById('txnFilterType').value;
   const monthFilter = document.getElementById('txnFilterMonth').value;
   const catFilter = document.getElementById('txnFilterCategory').value;
+  const searchEl = document.getElementById('txnFilterSearch');
+  const searchFilter = searchEl ? searchEl.value.trim().toLowerCase() : '';
   let list = (DATA.transactions || []).slice();
   if(typeFilter !== 'all') list = list.filter(t => t.type === typeFilter);
   if(monthFilter) list = list.filter(t => monthKeyOf(t.date) === monthFilter);
   if(catFilter) list = list.filter(t => t.category === catFilter);
+  if(searchFilter) list = list.filter(t => transactionSearchText(t).includes(searchFilter));
   list.sort((a,b) => b.date.localeCompare(a.date));
   const el = document.getElementById('txnList');
-  el.innerHTML = list.length ? list.slice(0,200).map(txnRowHtml).join('') : `<div class="empty">Aucun mouvement pour ces filtres.</div>`;
+  if(!list.length){ el.innerHTML = `<div class="empty">Aucun mouvement pour ces filtres.</div>`; return; }
+  // Regroupe l'historique par jour, avec le solde net de la journée en en-tête
+  // (revenus - dépenses ; les transferts et mouvements d'épargne ne comptent
+  // pas dans ce solde, comme dans le reste de l'application).
+  const capped = list.slice(0,200);
+  const groups = [];
+  capped.forEach(t => {
+    const g = groups[groups.length-1];
+    if(!g || g.date !== t.date) groups.push({date:t.date, items:[t]});
+    else g.items.push(t);
+  });
+  el.innerHTML = groups.map(g => {
+    const net = g.items.reduce((s,t) => s + (t.type==='revenu'?t.amount:(t.type==='depense'?-t.amount:0)), 0);
+    const netCls = net > 0 ? 'pos' : (net < 0 ? 'neg' : '');
+    const header = `<div class="txn-day-header"><span>${formatDateLong(g.date)}</span><span class="${netCls}">${net>=0?'+':''}${formatFCFA(net)}</span></div>`;
+    return header + g.items.map(txnRowHtml).join('');
+  }).join('');
 }
 
 /* ============ BUDGET ============ */
@@ -1540,7 +1637,7 @@ document.getElementById('newBillForm').addEventListener('submit', e => {
 /* Sélecteur de compte en modale (remplace l'ancien prompt() numéroté). */
 function pickAccountModal(title, sub, onPicked){
   const accounts = DATA.accounts || [];
-  if(!accounts.length){ alert('Aucun compte disponible.'); return; }
+  if(!accounts.length){ alertModal('Aucun compte disponible.'); return; }
   openModal({
     title, sub, submitLabel:'Confirmer',
     fields: [{id:'account', label:'Compte', type:'select', value:accounts[0].id,
@@ -1566,8 +1663,8 @@ function toggleBillPaid(id){
     if(account){ payBillWithAccount(b, account); return; }
     pickAccountModal(`Payer "${b.name}"`, `Montant : ${formatFCFA(b.amount)} — avec quel compte payez-vous cette facture ?`, acc => payBillWithAccount(b, acc));
     return;
-  } else {
-    if(!confirm('Annuler le paiement de cette facture ? La dépense correspondante sera supprimée et le solde réajusté.')) return;
+  }
+  confirmModal('Annuler le paiement de cette facture ? La dépense correspondante sera supprimée et le solde réajusté.', () => {
     const txn = (DATA.transactions||[]).find(t => t.id === b.paidTxnId);
     if(txn){
       const account = accountById(txn.accountId);
@@ -1576,19 +1673,20 @@ function toggleBillPaid(id){
     }
     b.paid = false;
     b.paidTxnId = '';
-  }
-  saveData();
-  renderAll();
+    saveData();
+    renderAll();
+  }, {title:'Annuler le paiement', submitLabel:'Annuler le paiement'});
 }
 window.toggleBillPaid = toggleBillPaid;
 function deleteBill(id){
   const b = (DATA.bills||[]).find(x => x.id === id);
   if(!b) return;
-  if(b.paid){ alert('Cette facture est déjà payée. Annulez d\'abord le paiement avant de la supprimer.'); return; }
-  if(!confirm(`Supprimer la facture "${b.name}" ?`)) return;
-  DATA.bills = DATA.bills.filter(x => x.id !== id);
-  saveData();
-  renderAll();
+  if(b.paid){ alertModal('Cette facture est déjà payée. Annulez d\'abord le paiement avant de la supprimer.'); return; }
+  confirmModal(`Supprimer la facture "${b.name}" ?`, () => {
+    DATA.bills = DATA.bills.filter(x => x.id !== id);
+    saveData();
+    renderAll();
+  }, {title:'Supprimer cette facture', submitLabel:'Supprimer'});
 }
 window.deleteBill = deleteBill;
 function renderBills(){
@@ -1639,20 +1737,24 @@ function adjustGoal(id, direction){
     fields: [{id:'amount', label:'Montant (FCFA)', type:'number', value:''}],
     onSubmit(v){
       const amount = Number(v.amount);
-      if(!amount || amount <= 0){ alert('Montant invalide.'); return; }
-      if(direction < 0 && amount > g.current){ alert('Ce montant dépasse ce qui est actuellement épargné sur cet objectif.'); return; }
+      if(!amount || amount <= 0){ alertModal('Montant invalide.'); return; }
+      if(direction < 0 && amount > g.current){ alertModal('Ce montant dépasse ce qui est actuellement épargné sur cet objectif.'); return; }
+      const applyGoalChange = () => {
+        g.current += direction * amount;
+        DATA.transactions.push({
+          id: genId('txn'), type: direction>0?'epargne_ajout':'epargne_retrait', amount, date: todayStr(),
+          category:'', subcategory:'', personId:'foyer', accountId:'', toAccountId:'', note:g.name, recurringId:''
+        });
+        saveData();
+        renderAll();
+        if(direction>0 && g.current >= g.target) showToast(`🎉 Objectif "${g.name}" atteint !`);
+        else showToast('Épargne mise à jour ✅');
+      };
       if(direction > 0 && amount > totalUsable()){
-        if(!confirm(`Attention : cela dépasse votre argent utilisable actuel (${formatFCFA(totalUsable())}). Continuer quand même ?`)) return;
+        confirmModal(`Attention : cela dépasse votre argent utilisable actuel (${formatFCFA(totalUsable())}). Continuer quand même ?`, applyGoalChange, {title:'Dépasser l\'argent utilisable ?', submitLabel:'Continuer quand même'});
+      } else {
+        applyGoalChange();
       }
-      g.current += direction * amount;
-      DATA.transactions.push({
-        id: genId('txn'), type: direction>0?'epargne_ajout':'epargne_retrait', amount, date: todayStr(),
-        category:'', subcategory:'', personId:'foyer', accountId:'', toAccountId:'', note:g.name, recurringId:''
-      });
-      saveData();
-      renderAll();
-      if(direction>0 && g.current >= g.target) showToast(`🎉 Objectif "${g.name}" atteint !`);
-      else showToast('Épargne mise à jour ✅');
     }
   });
 }
@@ -1681,10 +1783,11 @@ window.editGoal = editGoal;
 function deleteGoal(id){
   const g = goalById(id);
   if(!g) return;
-  if(!confirm(`Supprimer l'objectif "${g.name}" ? Les ${formatFCFA(g.current)} déjà épargnés redeviennent immédiatement utilisables.`)) return;
-  DATA.savingsGoals = DATA.savingsGoals.filter(x => x.id !== id);
-  saveData();
-  renderAll();
+  confirmModal(`Supprimer l'objectif "${g.name}" ? Les ${formatFCFA(g.current)} déjà épargnés redeviennent immédiatement utilisables.`, () => {
+    DATA.savingsGoals = DATA.savingsGoals.filter(x => x.id !== id);
+    saveData();
+    renderAll();
+  }, {title:'Supprimer cet objectif', submitLabel:'Supprimer'});
 }
 window.deleteGoal = deleteGoal;
 function renderSavings(){
@@ -1743,7 +1846,7 @@ function repayDebt(id){
   const d = debtById(id);
   if(!d) return;
   const accounts = DATA.accounts || [];
-  if(!accounts.length){ alert('Aucun compte disponible.'); return; }
+  if(!accounts.length){ alertModal('Aucun compte disponible.'); return; }
   openModal({
     title: `Rembourser "${d.name}"`,
     sub: `Restant dû : ${formatFCFA(d.restant)}`,
@@ -1755,7 +1858,7 @@ function repayDebt(id){
     ],
     onSubmit(v){
       const amount = Number(v.amount);
-      if(!amount || amount <= 0){ alert('Montant invalide.'); return; }
+      if(!amount || amount <= 0){ alertModal('Montant invalide.'); return; }
       const account = accountById(v.account);
       if(!account) return;
       account.balance -= amount;
@@ -1787,10 +1890,11 @@ function editDebt(id){
 }
 window.editDebt = editDebt;
 function deleteDebt(id){
-  if(!confirm('Supprimer cette dette de votre suivi ?')) return;
-  DATA.debts = (DATA.debts||[]).filter(x => x.id !== id);
-  saveData();
-  renderAll();
+  confirmModal('Supprimer cette dette de votre suivi ?', () => {
+    DATA.debts = (DATA.debts||[]).filter(x => x.id !== id);
+    saveData();
+    renderAll();
+  }, {title:'Supprimer cette dette', submitLabel:'Supprimer'});
 }
 window.deleteDebt = deleteDebt;
 function renderDebts(){
@@ -1974,7 +2078,7 @@ function formatFCFAPdf(n){
 }
 function exportReportPDF(){
   if(!window.jspdf || !window.jspdf.jsPDF){
-    alert('Le générateur de PDF est en cours de chargement, réessayez dans un instant.');
+    alertModal('Le générateur de PDF est en cours de chargement, réessayez dans un instant.');
     return;
   }
   const { jsPDF } = window.jspdf;
@@ -2040,6 +2144,36 @@ function exportReportPDF(){
 }
 window.exportReportPDF = exportReportPDF;
 
+/* ============ EXPORT CSV ============
+   Même contenu que le PDF (revenus + dépenses du mois affiché dans Rapports),
+   au format CSV pour ouverture directe dans Excel ou tout tableur. Séparateur
+   point-virgule et BOM UTF-8 : ce sont les réglages attendus par défaut par
+   Excel en français (sinon les accents et les colonnes s'affichent mal). */
+function csvEscape(val){
+  const s = String(val === undefined || val === null ? '' : val);
+  if(/["\n;]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+function exportReportCSV(){
+  const key = reportMonth;
+  const revenusTxns = (DATA.transactions||[]).filter(t => t.type==='revenu' && monthKeyOf(t.date)===key).sort((a,b)=>a.date.localeCompare(b.date));
+  const depensesTxns = expensesForMonth(key).sort((a,b)=>a.date.localeCompare(b.date));
+  const rows = [['Type','Date','Catégorie','Personne','Compte','Montant (FCFA)']];
+  revenusTxns.forEach(t => rows.push(['Revenu', t.date, categoryInfo(t.category,'revenu').label, personLabel(t.personId||'foyer'), accountById(t.accountId)?accountById(t.accountId).name:'-', Math.round(t.amount)]));
+  depensesTxns.forEach(t => rows.push(['Dépense', t.date, categoryInfo(t.category,'depense').label + (t.subcategory?` (${t.subcategory})`:''), personLabel(t.personId||'foyer'), accountById(t.accountId)?accountById(t.accountId).name:'-', -Math.round(t.amount)]));
+  const csv = '\uFEFF' + rows.map(r => r.map(csvEscape).join(';')).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ma-famille-rapport-${key}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+window.exportReportCSV = exportReportCSV;
+
 /* ============ PARAMÈTRES ============ */
 function renderSettings(){
   const soi = soiPersonne() || {prenom:'', nom:'', telephone:''};
@@ -2061,7 +2195,7 @@ function renderSettings(){
 }
 function editProfile(){
   const soi = soiPersonne();
-  if(!soi){ alert('Aucun profil trouvé.'); return; }
+  if(!soi){ alertModal('Aucun profil trouvé.'); return; }
   openModal({
     title: 'Modifier mon profil',
     submitLabel: 'Enregistrer',
@@ -2088,7 +2222,7 @@ document.getElementById('newCategoryForm').addEventListener('submit', e => {
   const type = document.getElementById('catType').value;
   if(!label) return;
   const id = 'custom_' + label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
-  if((DATA.categories||[]).some(c => c.id === id)){ alert('Cette catégorie existe déjà.'); return; }
+  if((DATA.categories||[]).some(c => c.id === id)){ alertModal('Cette catégorie existe déjà.'); return; }
   DATA.categories.push({id, label, type, custom:true});
   saveData();
   e.target.reset();
@@ -2097,11 +2231,12 @@ document.getElementById('newCategoryForm').addEventListener('submit', e => {
   showToast('Catégorie ajoutée ✅');
 });
 function deleteCategory(id){
-  if(!confirm('Supprimer cette catégorie personnalisée ? Les mouvements déjà enregistrés avec elle resteront inchangés.')) return;
-  DATA.categories = (DATA.categories||[]).filter(c => c.id !== id);
-  saveData();
-  renderAll();
-  renderSettings();
+  confirmModal('Supprimer cette catégorie personnalisée ? Les mouvements déjà enregistrés avec elle resteront inchangés.', () => {
+    DATA.categories = (DATA.categories||[]).filter(c => c.id !== id);
+    saveData();
+    renderAll();
+    renderSettings();
+  }, {title:'Supprimer cette catégorie', submitLabel:'Supprimer'});
 }
 window.deleteCategory = deleteCategory;
 function exportData(){
@@ -2123,16 +2258,17 @@ function importData(file){
   reader.onload = e => {
     let parsed;
     try{ parsed = JSON.parse(e.target.result); }
-    catch(err){ alert('Fichier invalide : ce n\'est pas un JSON lisible.'); return; }
-    if(!parsed.accounts || !parsed.transactions){ alert('Fichier invalide : structure inattendue.'); return; }
-    if(!confirm('Remplacer TOUTES les données actuelles par cette sauvegarde ? Cette action est irréversible.')) return;
-    delete parsed.exportedAt;
-    parsed = migrateLegacyIfNeeded(parsed);
-    DATA = Object.assign(defaultFoyerData(), parsed);
-    if(!Array.isArray(DATA.personnes)) DATA.personnes = [];
-    saveData();
-    renderAll();
-    showToast('Sauvegarde restaurée ✅');
+    catch(err){ alertModal('Fichier invalide : ce n\'est pas un JSON lisible.'); return; }
+    if(!parsed.accounts || !parsed.transactions){ alertModal('Fichier invalide : structure inattendue.'); return; }
+    confirmModal('Remplacer TOUTES les données actuelles par cette sauvegarde ? Cette action est irréversible.', () => {
+      delete parsed.exportedAt;
+      parsed = migrateLegacyIfNeeded(parsed);
+      DATA = Object.assign(defaultFoyerData(), parsed);
+      if(!Array.isArray(DATA.personnes)) DATA.personnes = [];
+      saveData();
+      renderAll();
+      showToast('Sauvegarde restaurée ✅');
+    }, {title:'Restaurer la sauvegarde', submitLabel:'Remplacer'});
   };
   reader.readAsText(file);
   document.getElementById('importFile').value = '';
