@@ -20,6 +20,12 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+/* Sur certains réseaux/opérateurs, la connexion "streaming" que Firestore essaie
+   en premier échoue silencieusement puis rebascule sur du "long polling" après
+   un long délai (c'est exactement ce qui cause un premier chargement très lent,
+   ~20-30s, alors que tout le reste du site est instantané). Cette option force
+   la détection immédiate du bon mode de connexion au lieu d'attendre l'échec. */
+db.settings({ experimentalAutoDetectLongPolling: true });
 /* Pas de connexion : toutes les données vivent dans UN SEUL document fixe.
    Cet identifiant doit correspondre exactement à celui utilisé dans la règle
    Firestore (Console > Firestore Database > Règles). */
@@ -219,7 +225,7 @@ function saveData(){
 
 /* ============ ÉCRANS ============ */
 function hideAllGateScreens(){
-  ['setupScreen','appRoot'].forEach(id => {
+  ['loadingScreen','setupScreen','appRoot'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
@@ -316,6 +322,18 @@ function startSync(){
   }, err => {
     console.error('Erreur de synchronisation Firestore :', err);
     setSyncBadge('err');
+    // Si on n'a encore jamais réussi à charger les données, l'écran de
+    // chargement resterait bloqué indéfiniment sans message : on affiche
+    // l'erreur dessus plutôt que de laisser "Connexion à vos données…" tourner.
+    if(!dataReady){
+      const loading = document.getElementById('loadingScreen');
+      if(loading){
+        loading.innerHTML = `<div class="login-card" style="text-align:center;">
+          <div class="login-brand" style="justify-content:center;"><span class="dot"></span>MA FAMILLE</div>
+          <p class="login-sub" style="margin:10px 0 0;color:var(--red);">Impossible de se connecter à la base de données.<br>Vérifiez la règle Firestore et votre connexion internet, puis rechargez la page.</p>
+        </div>`;
+      }
+    }
   });
 }
 
