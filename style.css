@@ -383,6 +383,16 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
 .date-pill.today{color:var(--teal);background:rgba(27,110,99,0.12);}
 .date-pill.soon{color:var(--orange);background:rgba(226,169,58,0.16);}
 .date-pill.late{color:var(--red);background:rgba(209,72,63,0.12);}
+/* ============ HISTORIQUE — en-tête de groupe par jour ============ */
+.txn-day-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:12px 4px 6px;margin-top:2px;font-family:'JetBrains Mono',monospace;font-size:10.5px;
+  font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;
+  border-top:1px solid var(--border);
+}
+.txn-day-header:first-child{border-top:none;padding-top:2px;margin-top:0;}
+.txn-day-header span.pos{color:var(--green);}
+.txn-day-header span.neg{color:var(--red);}
 /* ============ MOBILE (fin de fichier pour primer sur les règles ci-dessus) ============ */
 @media (max-width:640px){
   .topbar{padding:10px 12px;gap:8px;}
