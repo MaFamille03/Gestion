@@ -181,6 +181,12 @@ function openModal(opts){
       return `<div class="field-group"><label class="field-label">${escapeHtml(f.label)}</label><select id="modal_${f.id}">${optsHtml}</select></div>`;
     }
     const type = f.type || 'text';
+    if(type === 'password'){
+      return `<div class="field-group"><label class="field-label">${escapeHtml(f.label)}</label>
+        <div class="password-field"><input type="password" id="modal_${f.id}" autocomplete="off" value="${escapeHtml(f.value||'')}" placeholder="${escapeHtml(f.placeholder||'')}">
+        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('modal_${f.id}', this)">👁</button></div>
+      </div>`;
+    }
     const step = type === 'number' ? ' step="1"' : '';
     return `<div class="field-group"><label class="field-label">${escapeHtml(f.label)}</label><input type="${type}" id="modal_${f.id}" value="${escapeHtml(f.value===undefined||f.value===null?'':f.value)}"${step} placeholder="${escapeHtml(f.placeholder||'')}"></div>`;
   }).join('');
@@ -412,6 +418,7 @@ function hideAllGateScreens(){
 function showAuthScreen(){
   hideAllGateScreens();
   document.getElementById('authScreen').style.display = 'flex';
+  clearAuthFormFields();
 }
 function showLoadingScreen(){
   hideAllGateScreens();
@@ -655,6 +662,8 @@ function authErrorMessage(err){
     'auth/too-many-requests': "Trop de tentatives. Réessayez dans quelques minutes.",
     'auth/network-request-failed': "Problème de connexion internet. Réessayez.",
     'auth/operation-not-allowed': "La connexion par e-mail n'est pas encore activée dans Firebase Console (Authentication → Sign-in method → Email/Password).",
+    'auth/requires-recent-login': "Par sécurité, reconnectez-vous puis réessayez immédiatement cette action.",
+    'auth/user-mismatch': "Ce mot de passe ne correspond pas au compte connecté.",
   };
   return map[err.code] || ("Erreur : " + (err.message || err.code || 'inconnue'));
 }
@@ -680,16 +689,61 @@ document.getElementById('registerForm').addEventListener('submit', e => {
     errEl.textContent = authErrorMessage(err);
   });
 });
+/* Vide les champs email/mot de passe de connexion et création de compte —
+   appelé à la déconnexion et à chaque affichage de l'écran de connexion,
+   pour qu'aucune valeur saisie précédemment ne reste visible ou soumise. */
+function clearAuthFormFields(){
+  ['loginEmail','loginPassword','registerEmail','registerPassword','registerPassword2'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  const loginErr = document.getElementById('loginError'); if(loginErr) loginErr.textContent = '';
+  const regErr = document.getElementById('registerError'); if(regErr) regErr.textContent = '';
+}
 function logoutUser(){
   openModal({
     title: 'Se déconnecter ?',
     sub: 'Vous pourrez vous reconnecter à tout moment avec votre adresse et votre mot de passe.',
     submitLabel: 'Se déconnecter',
     fields: [],
-    onSubmit(){ auth.signOut(); }
+    onSubmit(){
+      auth.signOut();
+      clearAuthFormFields();
+    }
   });
 }
 window.logoutUser = logoutUser;
+function openDeleteAccountModal(){
+  const user = auth.currentUser;
+  if(!user) return;
+  openModal({
+    title: 'Supprimer définitivement mon compte',
+    sub: `Cette action supprime immédiatement et sans retour possible toutes les données de votre foyer ainsi que votre compte de connexion (${user.email}). Entrez votre mot de passe pour confirmer.`,
+    submitLabel: 'Supprimer définitivement',
+    fields: [
+      {id:'password', label:'Mot de passe', type:'password', value:''},
+      {id:'confirm', label:'Je comprends que cette action est irréversible', type:'checkbox', value:false},
+    ],
+    onSubmit(v){
+      if(!v.confirm){ alert('Veuillez cocher la case de confirmation.'); return; }
+      if(!v.password){ alert('Mot de passe requis.'); return; }
+      const credential = firebase.auth.EmailAuthProvider.credential(user.email, v.password);
+      const uid = user.uid;
+      user.reauthenticateWithCredential(credential)
+        .then(() => db.collection('foyers').doc(uid).delete())
+        .then(() => user.delete())
+        .then(() => {
+          clearAuthFormFields();
+          showToast('Compte et données supprimés définitivement.');
+        })
+        .catch(err => {
+          console.error('Erreur de suppression de compte :', err);
+          alert(authErrorMessage(err));
+        });
+    }
+  });
+}
+window.openDeleteAccountModal = openDeleteAccountModal;
 /* Bouton "œil" sur les champs mot de passe (connexion et création de compte). */
 function togglePasswordVisibility(inputId, btn){
   const el = document.getElementById(inputId);
