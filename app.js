@@ -21,6 +21,7 @@ const firebaseConfig = {
   appId: "1:908502729265:web:60afd8942265e4db340b10"
 };
 firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
 const db = firebase.firestore();
 /* Sur certains réseaux/opérateurs, la connexion "streaming" que Firestore essaie
    en premier échoue silencieusement puis rebascule sur du "long polling" après
@@ -28,11 +29,12 @@ const db = firebase.firestore();
    ~20-30s, alors que tout le reste du site est instantané). Cette option force
    la détection immédiate du bon mode de connexion au lieu d'attendre l'échec. */
 db.settings({ experimentalAutoDetectLongPolling: true });
-/* Pas de connexion : toutes les données vivent dans UN SEUL document fixe.
-   Cet identifiant doit correspondre exactement à celui utilisé dans la règle
-   Firestore (Console > Firestore Database > Règles). */
-const FOYER_DOC_ID = 'DsNWFrLX3QgaYNtLIjiXRnb8C8y1';
-const DOC_REF = db.collection('foyers').doc(FOYER_DOC_ID);
+/* Chaque compte (email + mot de passe) a son propre document Firestore,
+   identifié par son uid Firebase Auth — voir onAuthStateChanged plus bas.
+   Tant que personne n'est connecté, DOC_REF reste null : aucune lecture ni
+   écriture n'est possible avant l'authentification (voir la règle Firestore). */
+let DOC_REF = null;
+let unsubscribeSnapshot = null;
 
 /* ============ CONSTANTES ============ */
 const ACCOUNT_TYPES = [
@@ -275,7 +277,7 @@ function relativeDatePill(dateStr){
 }
 
 /* ============ MODÈLE DE DONNÉES « FOYER DYNAMIQUE » ============
-   Un seul document Firestore : collection 'foyers', id fixe = FOYER_DOC_ID.
+   Un document Firestore par compte : collection 'foyers', id = uid Firebase Auth.
    {
      foyer: { nom, situationLogement:'seul'|'couple'|'famille'|'autre' },
      personnes: [ {
@@ -391,6 +393,7 @@ function setSyncBadge(state){
   else { el.textContent = '🔄 connexion…'; el.className = 'sync-badge'; }
 }
 function saveData(){
+  if(!DOC_REF) return;
   setSyncBadge('saving');
   DOC_REF.set(DATA).then(() => setSyncBadge('ok')).catch(err => {
     console.error('Erreur de sauvegarde Firestore :', err);
@@ -401,10 +404,23 @@ function saveData(){
 
 /* ============ ÉCRANS ============ */
 function hideAllGateScreens(){
-  ['loadingScreen','setupScreen','appRoot'].forEach(id => {
+  ['loadingScreen','authScreen','setupScreen','appRoot'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
+}
+function showAuthScreen(){
+  hideAllGateScreens();
+  document.getElementById('authScreen').style.display = 'flex';
+}
+function showLoadingScreen(){
+  hideAllGateScreens();
+  const loading = document.getElementById('loadingScreen');
+  loading.innerHTML = `<div class="login-card" style="text-align:center;">
+    <div class="login-brand" style="justify-content:center;"><span class="dot"></span>MA FAMILLE</div>
+    <p class="login-sub" style="margin:10px 0 0;">Connexion à vos données…</p>
+  </div>`;
+  loading.style.display = 'flex';
 }
 function showSetupScreen(){
   hideAllGateScreens();
@@ -613,13 +629,79 @@ document.getElementById('wizNextBtn').addEventListener('click', () => {
   }
 });
 
+/* ============ AUTHENTIFICATION (comptes séparés) ============
+   Un compte Firebase Auth (email + mot de passe) par foyer. Le document
+   Firestore de chaque foyer est identifié par l'uid du compte connecté :
+   personne d'autre ne peut y accéder (voir la règle Firestore basée sur
+   request.auth.uid). Se souvenir de son mot de passe est indispensable —
+   il n'existe aucun moyen de récupérer les données sans lui. */
+function switchAuthTab(tab){
+  document.getElementById('authTabLogin').classList.toggle('active', tab === 'login');
+  document.getElementById('authTabRegister').classList.toggle('active', tab === 'register');
+  document.getElementById('loginForm').style.display = tab === 'login' ? 'flex' : 'none';
+  document.getElementById('registerForm').style.display = tab === 'register' ? 'flex' : 'none';
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('registerError').textContent = '';
+}
+window.switchAuthTab = switchAuthTab;
+function authErrorMessage(err){
+  const map = {
+    'auth/invalid-email': "Adresse e-mail invalide.",
+    'auth/user-not-found': "Aucun compte ne correspond à cette adresse.",
+    'auth/wrong-password': "Mot de passe incorrect.",
+    'auth/invalid-credential': "Adresse ou mot de passe incorrect.",
+    'auth/email-already-in-use': "Un compte existe déjà avec cette adresse — utilisez plutôt « Se connecter ».",
+    'auth/weak-password': "Le mot de passe doit contenir au moins 6 caractères.",
+    'auth/too-many-requests': "Trop de tentatives. Réessayez dans quelques minutes.",
+    'auth/network-request-failed': "Problème de connexion internet. Réessayez.",
+    'auth/operation-not-allowed': "La connexion par e-mail n'est pas encore activée dans Firebase Console (Authentication → Sign-in method → Email/Password).",
+  };
+  return map[err.code] || ("Erreur : " + (err.message || err.code || 'inconnue'));
+}
+document.getElementById('loginForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  auth.signInWithEmailAndPassword(email, password).catch(err => {
+    errEl.textContent = authErrorMessage(err);
+  });
+});
+document.getElementById('registerForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const errEl = document.getElementById('registerError');
+  errEl.textContent = '';
+  const email = document.getElementById('registerEmail').value.trim();
+  const password = document.getElementById('registerPassword').value;
+  const password2 = document.getElementById('registerPassword2').value;
+  if(password !== password2){ errEl.textContent = 'Les deux mots de passe ne correspondent pas.'; return; }
+  auth.createUserWithEmailAndPassword(email, password).catch(err => {
+    errEl.textContent = authErrorMessage(err);
+  });
+});
+function logoutUser(){
+  if(!confirm('Se déconnecter de ce compte ?')) return;
+  auth.signOut();
+}
+window.logoutUser = logoutUser;
+
 /* ============ SYNCHRONISATION ============
-   Pas d'authentification : l'application se connecte directement au document
-   fixe FOYER_DOC_ID dès le chargement de la page. L'accès aux données repose
-   uniquement sur la confidentialité du lien du site — voir la carte "Accès"
-   dans Paramètres. */
-function startSync(){
-  DOC_REF.onSnapshot(snap => {
+   Se déclenche à chaque changement d'état de connexion (connexion,
+   inscription, déconnexion, ou session déjà active au chargement de la
+   page). Chaque foyer lit/écrit uniquement son propre document. */
+auth.onAuthStateChanged(user => {
+  if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+  if(!user){
+    DOC_REF = null;
+    dataReady = false;
+    foyerExists = false;
+    showAuthScreen();
+    return;
+  }
+  DOC_REF = db.collection('foyers').doc(user.uid);
+  showLoadingScreen();
+  unsubscribeSnapshot = DOC_REF.onSnapshot(snap => {
     if(snap.exists){
       let shared = migrateLegacyIfNeeded(snap.data());
       DATA = Object.assign(defaultFoyerData(), shared);
@@ -651,7 +733,7 @@ function startSync(){
       }
     }
   });
-}
+});
 
 /* ============ NAVIGATION ============
    5 onglets principaux ; tout le reste vit derrière l'onglet "Plus" (menu en
@@ -1893,6 +1975,11 @@ function renderSettings(){
     <div class="settings-row"><div><div class="label">${escapeHtml(soi.prenom)} ${escapeHtml(soi.nom||'')}</div></div></div>
     <div class="settings-row"><div><div class="label">Téléphone</div><div class="desc">${escapeHtml(soi.telephone) || 'Non renseigné'}</div></div></div>
     <div class="settings-row"><div><div class="label">Foyer</div><div class="desc">${escapeHtml(DATA.foyer.nom)}</div></div></div>`;
+  const accEl = document.getElementById('settingsAccount');
+  if(accEl){
+    const email = (auth.currentUser && auth.currentUser.email) || '—';
+    accEl.innerHTML = `<div class="settings-row"><div><div class="label">Adresse de connexion</div><div class="desc">${escapeHtml(email)}</div></div></div>`;
+  }
   const el = document.getElementById('settingsCategoriesList');
   const customCats = DATA.categories || [];
   el.innerHTML = customCats.length ? customCats.map(c => `
@@ -2037,5 +2124,7 @@ function renderDashboard(){
   document.getElementById('dashBudgetAlerts').innerHTML = alerts.length ? alerts.map(a => `<div class="alert ${a.level}"><span>${a.level==='red'?'🔴':(a.level==='orange'?'🟠':'🔵')}</span><div><p>${escapeHtml(a.text)}</p></div></div>`).join('') : `<div class="alert green"><span>🟢</span><div><b>Tout va bien</b><p>Aucun budget proche du dépassement.</p></div></div>`;
 }
 
-/* ============ INIT ============ */
-startSync();
+/* ============ INIT ============
+   Rien à appeler ici : auth.onAuthStateChanged() ci-dessus s'enregistre dès
+   l'exécution du script et déclenche automatiquement l'écran adapté
+   (connexion, questionnaire, ou application) selon l'état de la session. */
