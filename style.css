@@ -234,6 +234,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
 .login-error{color:var(--red);font-size:12.5px;min-height:16px;}
 .login-link{background:none;border:none;color:var(--terracotta);font-size:12.5px;cursor:pointer;padding:0;text-align:left;font-family:inherit;}
 .login-btn{width:100%;text-align:center;margin-top:4px;padding:13px 18px;}
+.auth-tabs{display:flex;gap:4px;background:var(--surface-soft);border:1px solid var(--border);border-radius:12px;padding:4px;margin-bottom:18px;}
+.auth-tab{all:unset;box-sizing:border-box;flex:1;text-align:center;cursor:pointer;padding:9px 6px;border-radius:9px;font-size:12.5px;font-weight:700;color:var(--muted);}
+.auth-tab.active{background:var(--surface);color:var(--terracotta);box-shadow:var(--shadow);}
+.auth-form{display:flex;flex-direction:column;gap:12px;}
 .setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 @media (max-width:460px){.setup-grid{grid-template-columns:1fr;}}
 /* ============ SETTINGS ============ */
