@@ -14,6 +14,8 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
 </head>
 <body>
 
@@ -184,6 +186,7 @@
               </select>
             </div>
             <div class="field-group"><label class="field-label">Solde de départ (FCFA)</label><input type="number" id="naBalance" placeholder="0" min="0" value="0"></div>
+            <div class="field-group"><label class="field-label">Propriétaire</label><select id="naOwner"></select></div>
             <button type="submit" class="cta-inline form-submit">Ajouter ce compte</button>
           </form>
         </div>
@@ -195,6 +198,7 @@
             <div class="field-group"><label class="field-label">Vers</label><select id="trTo"></select></div>
             <div class="field-group"><label class="field-label">Montant (FCFA)</label><input type="number" id="trAmount" placeholder="0" min="1" required></div>
             <div class="field-group"><label class="field-label">Note (facultatif)</label><input type="text" id="trNote" placeholder="Ex. Retrait pour dépenses courantes"></div>
+            <p class="form-hint" id="trFeeHint" style="grid-column:1/-1;"></p>
             <button type="submit" class="cta-inline secondary form-submit">Effectuer le transfert</button>
           </form>
         </div>
@@ -373,7 +377,6 @@
         <div class="card">
           <h2>Personnes du foyer <span class="card-h2-right"><button type="button" class="icon-btn wide" onclick="openAddPerson()">＋ Ajouter une personne</button></span></h2>
           <div id="personnesList"></div>
-          <div id="addPersonFormWrap" style="display:none;margin-top:14px;"></div>
         </div>
         <div class="card" id="pastPersonsCard" style="display:none;">
           <h2>Personnes parties du foyer</h2>
@@ -417,7 +420,10 @@
       <!-- ============ RAPPORTS ============ -->
       <div id="view-reports" class="view">
         <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
-        <div class="hero"><div><h1>Rapport mensuel</h1><p>Vue d'ensemble et évolution de votre budget.</p></div></div>
+        <div class="hero">
+          <div><h1>Rapport mensuel</h1><p>Vue d'ensemble et évolution de votre budget.</p></div>
+          <button type="button" class="icon-btn wide" onclick="exportReportPDF()">📄 Exporter en PDF</button>
+        </div>
         <div class="card">
           <div class="cal-header">
             <button class="cal-nav" onclick="shiftReportMonth(-1)">‹</button>
@@ -483,6 +489,9 @@
       <div class="footnote">MA FAMILLE — gestion privée du foyer, en FCFA. Vos données restent dans votre base personnelle.</div>
     </div>
   </div>
+
+  <!-- ============ ZONE MODALE (Userforms) ============ -->
+  <div id="modalOverlay" class="modal-overlay"></div>
 
   <script src="app.js" defer></script>
 </body>
