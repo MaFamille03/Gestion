@@ -43,6 +43,7 @@
         <div class="field-group"><label class="field-label">Mot de passe</label>
           <div class="password-field"><input type="password" id="loginPassword" autocomplete="off" required><button type="button" class="password-toggle" onclick="togglePasswordVisibility('loginPassword', this)">👁</button></div>
         </div>
+        <p style="text-align:right;margin:-8px 0 0;"><button type="button" class="login-link" onclick="openForgotPasswordModal()">Mot de passe oublié ?</button></p>
         <div class="login-error" id="loginError"></div>
         <button type="submit" class="cta-inline login-btn">Se connecter</button>
       </form>
@@ -278,6 +279,7 @@
         <div class="card">
           <h2>Historique</h2>
           <div class="inline-form">
+            <input type="text" id="txnFilterSearch" placeholder="🔎 Rechercher (note, catégorie, personne…)">
             <select id="txnFilterType"><option value="all">Tous</option><option value="revenu">Revenus</option><option value="depense">Dépenses</option><option value="transfert">Transferts</option></select>
             <input type="month" id="txnFilterMonth">
             <select id="txnFilterCategory"><option value="">Toutes catégories</option></select>
@@ -458,7 +460,10 @@
         <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
         <div class="hero">
           <div><h1>Rapport mensuel</h1><p>Vue d'ensemble et évolution de votre budget.</p></div>
-          <button type="button" class="icon-btn wide" onclick="exportReportPDF()">📄 Exporter en PDF</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="icon-btn wide" onclick="exportReportCSV()">📑 Exporter en CSV</button>
+            <button type="button" class="icon-btn wide" onclick="exportReportPDF()">📄 Exporter en PDF</button>
+          </div>
         </div>
         <div class="card">
           <div class="cal-header">
