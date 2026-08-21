@@ -72,7 +72,12 @@ button{font-family:inherit;}
 }
 .card + .card{margin-top:16px;}
 .card h2{font-size:13px;margin:0 0 14px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);font-weight:700;}
+.card h2::after{content:"";display:table;clear:both;}
 .card h2 .card-h2-right{float:right;text-transform:none;letter-spacing:0;font-weight:600;font-size:12px;}
+@media (max-width:480px){
+  .card h2 .card-h2-right{float:none;display:block;margin-top:10px;}
+  .card h2 .card-h2-right .icon-btn.wide{width:100%;justify-content:center;}
+}
 .view{display:none;}
 .view.active{display:block;}
 .footnote{text-align:center;color:var(--muted);font-size:11px;margin-top:30px;font-family:'JetBrains Mono',monospace;}
@@ -171,6 +176,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
 }
 .icon-btn:hover{background:var(--grad-soft);color:var(--terracotta);}
 .icon-btn.danger:hover{background:rgba(209,72,63,0.12);color:var(--red);}
+.icon-btn.danger.wide{background:rgba(209,72,63,0.10);color:var(--red);border:1px solid rgba(209,72,63,0.3);}
+.icon-btn.danger.wide:hover{background:rgba(209,72,63,0.18);}
+.card.danger-zone{border-color:rgba(209,72,63,0.3);}
+.card.danger-zone h2{color:var(--red);}
 .icon-btn.wide{width:auto;padding:7px 14px;font-weight:600;}
 /* ============ ALERTS / TOASTS ============ */
 .alert{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:13px;margin-bottom:9px;font-size:12.5px;}
@@ -398,4 +407,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
   .person-card{flex-direction:column;}
   .person-actions{width:100%;justify-content:flex-start;}
   .stepper-count button{width:38px;height:38px;font-size:17px;}
+}
+/* Onglets du haut assez compacts pour tenir sans défilement sur la plupart des téléphones */
+@media (max-width:430px){
+  .nav{gap:1px;padding:3px;}
+  .nav .tab{padding:7px 6px;font-size:10.8px;}
+}
+@media (max-width:360px){
+  .nav .tab{padding:6px 5px;font-size:10.2px;}
 }
