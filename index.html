@@ -8,12 +8,22 @@
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" defer></script>
 </head>
 <body>
+
+  <!-- ============ CHARGEMENT (visible dès l'ouverture, le temps que Firebase se connecte) ============ -->
+  <div id="loadingScreen" class="login-screen" style="display:flex;">
+    <div class="login-card" style="text-align:center;">
+      <div class="login-brand" style="justify-content:center;"><span class="dot"></span>MA FAMILLE</div>
+      <p class="login-sub" style="margin:10px 0 0;">Connexion à vos données…</p>
+    </div>
+  </div>
 
   <!-- ============ CRÉATION DU FOYER (première utilisation) ============ -->
   <div id="setupScreen" class="login-screen" style="display:none;">
@@ -473,6 +483,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>
