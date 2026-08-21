@@ -681,10 +681,24 @@ document.getElementById('registerForm').addEventListener('submit', e => {
   });
 });
 function logoutUser(){
-  if(!confirm('Se déconnecter de ce compte ?')) return;
-  auth.signOut();
+  openModal({
+    title: 'Se déconnecter ?',
+    sub: 'Vous pourrez vous reconnecter à tout moment avec votre adresse et votre mot de passe.',
+    submitLabel: 'Se déconnecter',
+    fields: [],
+    onSubmit(){ auth.signOut(); }
+  });
 }
 window.logoutUser = logoutUser;
+/* Bouton "œil" sur les champs mot de passe (connexion et création de compte). */
+function togglePasswordVisibility(inputId, btn){
+  const el = document.getElementById(inputId);
+  if(!el) return;
+  const show = el.type === 'password';
+  el.type = show ? 'text' : 'password';
+  btn.textContent = show ? '🙈' : '👁';
+}
+window.togglePasswordVisibility = togglePasswordVisibility;
 
 /* ============ SYNCHRONISATION ============
    Se déclenche à chaque changement d'état de connexion (connexion,
@@ -696,6 +710,10 @@ auth.onAuthStateChanged(user => {
     DOC_REF = null;
     dataReady = false;
     foyerExists = false;
+    // Toujours repartir du tableau de bord à la prochaine connexion, plutôt
+    // que de rouvrir l'onglet où l'on se trouvait avant de se déconnecter.
+    currentView = 'dashboard';
+    saveLocalPrefs();
     showAuthScreen();
     return;
   }
