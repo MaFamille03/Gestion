@@ -217,12 +217,14 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--terracotta);}
 .repart-pct{width:44px;flex:none;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);}
 /* ============ LOGIN / SETUP ============ */
 .login-screen{
-  position:fixed;inset:0;display:none;align-items:center;justify-content:center;
-  background:radial-gradient(circle at top, #FDEEDB, var(--bg));z-index:50;padding:20px;
+  position:fixed;inset:0;display:none;flex-direction:column;align-items:center;
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+  background:radial-gradient(circle at top, #FDEEDB, var(--bg));z-index:50;padding:40px 20px;
 }
 .login-card{
   background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:32px;
   box-shadow:var(--shadow);width:100%;max-width:380px;display:flex;flex-direction:column;gap:12px;
+  margin:auto 0;flex:none;
 }
 .login-card.wide{max-width:560px;}
 .login-brand{font-weight:800;font-size:16px;display:flex;align-items:center;gap:8px;margin-bottom:4px;}
