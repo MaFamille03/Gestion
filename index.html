@@ -13,6 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" defer></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
@@ -24,6 +25,34 @@
     <div class="login-card" style="text-align:center;">
       <div class="login-brand" style="justify-content:center;"><span class="dot"></span>MA FAMILLE</div>
       <p class="login-sub" style="margin:10px 0 0;">Connexion à vos données…</p>
+    </div>
+  </div>
+
+  <!-- ============ CONNEXION / CRÉATION DE COMPTE ============ -->
+  <div id="authScreen" class="login-screen" style="display:none;">
+    <div class="login-card">
+      <div class="login-brand" style="justify-content:center;"><span class="dot"></span>MA FAMILLE</div>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" id="authTabLogin" onclick="switchAuthTab('login')">Se connecter</button>
+        <button type="button" class="auth-tab" id="authTabRegister" onclick="switchAuthTab('register')">Créer un compte</button>
+      </div>
+      <form id="loginForm" class="auth-form">
+        <h2>Bon retour</h2>
+        <p class="login-sub">Connectez-vous pour retrouver votre foyer.</p>
+        <div class="field-group"><label class="field-label">Adresse e-mail</label><input type="email" id="loginEmail" required></div>
+        <div class="field-group"><label class="field-label">Mot de passe</label><input type="password" id="loginPassword" required></div>
+        <div class="login-error" id="loginError"></div>
+        <button type="submit" class="cta-inline login-btn">Se connecter</button>
+      </form>
+      <form id="registerForm" class="auth-form" style="display:none;">
+        <h2>Créer votre compte</h2>
+        <p class="login-sub">Choisissez une adresse et un mot de passe : ils vous serviront à retrouver votre foyer à chaque visite.</p>
+        <div class="field-group"><label class="field-label">Adresse e-mail</label><input type="email" id="registerEmail" required></div>
+        <div class="field-group"><label class="field-label">Mot de passe (6 caractères min.)</label><input type="password" id="registerPassword" minlength="6" required></div>
+        <div class="field-group"><label class="field-label">Confirmer le mot de passe</label><input type="password" id="registerPassword2" minlength="6" required></div>
+        <div class="login-error" id="registerError"></div>
+        <button type="submit" class="cta-inline login-btn">Créer mon compte</button>
+      </form>
     </div>
   </div>
 
@@ -481,8 +510,9 @@
           </div>
         </div>
         <div class="card">
-          <h2>Accès</h2>
-          <div class="alert orange"><span>⚠️</span><div><b>Aucun mot de passe</b><p>Ce site n'a plus d'écran de connexion : toute personne possédant le lien peut voir et modifier ces données. Ne le partagez pas et évitez de le publier ailleurs que dans votre navigateur.</p></div></div>
+          <h2>Compte</h2>
+          <div id="settingsAccount"></div>
+          <div style="margin-top:14px;"><button class="icon-btn wide" onclick="logoutUser()">🚪 Se déconnecter</button></div>
         </div>
       </div>
 
