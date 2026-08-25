@@ -22,6 +22,16 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
+/* Force la connexion à rester mémorisée via localStorage plutôt que via
+   IndexedDB (comportement par défaut de Firebase). Sur certains navigateurs
+   mobiles — Safari iPhone en tête — le stockage IndexedDB peut se corrompre
+   (ex. après une longue inactivité ou en navigation privée), ce qui provoque
+   une erreur bloquante au moment de se connecter ("Object store cannot be
+   found in the backing store"). localStorage est beaucoup plus simple et
+   fiable pour ce seul usage (retenir qui est connecté). */
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => {
+  console.warn('Persistance de connexion : impossible d\'utiliser localStorage, la connexion ne sera peut-être pas mémorisée.', err);
+});
 const db = firebase.firestore();
 /* Sur certains réseaux/opérateurs, la connexion "streaming" que Firestore essaie
    en premier échoue silencieusement puis rebascule sur du "long polling" après
@@ -64,16 +74,26 @@ const ACCOUNT_TYPES = [
    (comportement réel des opérateurs ivoiriens : Wave, Djamo, Orange Money,
    MTN Money, Moov Money). Banque, espèces et "Autre" restent sans frais. */
 const MOBILE_MONEY_TYPES = ['DJAMO','ORANGE_MONEY','WAVE','MTN_MONEY','MOOV_MONEY'];
+/* Chaque catégorie de dépense porte désormais une "nature" — fixe ou
+   variable — décidée une fois pour toutes par catégorie (et non transaction
+   par transaction). C'est ce qui alimente la séparation "Dépense fixe" /
+   "Dépense variable" de l'onglet Dépenses et du tableau de bord.
+   Hypothèse retenue pour les catégories non précisées par l'utilisateur :
+   maison/éducation/dettes = fixe (charges qui reviennent à l'identique) ;
+   alimentation/personnel/transport/santé/habillement/loisirs/autre = variable
+   (montant qui change d'un mois à l'autre). Ajustable à tout moment depuis
+   Paramètres → Catégories personnalisées pour toute nouvelle catégorie. */
 const EXPENSE_CATEGORIES = [
-  {id:'maison', label:'Maison', icon:'🏠'},
-  {id:'alimentation', label:'Alimentation', icon:'🍚'},
-  {id:'personnel', label:'Dépense personnelle', icon:'👤'},
-  {id:'transport', label:'Transport', icon:'🚗'},
-  {id:'sante', label:'Santé', icon:'🏥'},
-  {id:'education', label:'Éducation', icon:'🎓'},
-  {id:'loisirs', label:'Loisirs', icon:'🎉'},
-  {id:'dettes', label:'Dettes', icon:'💳'},
-  {id:'autre', label:'Autre', icon:'📦'},
+  {id:'maison', label:'Maison', icon:'🏠', nature:'fixe'},
+  {id:'alimentation', label:'Alimentation', icon:'🍚', nature:'variable'},
+  {id:'personnel', label:'Dépense personnelle', icon:'👤', nature:'variable'},
+  {id:'transport', label:'Transport', icon:'🚗', nature:'variable'},
+  {id:'sante', label:'Santé', icon:'🏥', nature:'variable'},
+  {id:'habillement', label:'Habillement', icon:'👕', nature:'variable'},
+  {id:'education', label:'Éducation', icon:'🎓', nature:'fixe'},
+  {id:'loisirs', label:'Loisirs', icon:'🎉', nature:'variable'},
+  {id:'dettes', label:'Dettes', icon:'💳', nature:'fixe'},
+  {id:'autre', label:'Autre', icon:'📦', nature:'variable'},
 ];
 const INCOME_CATEGORIES = [
   {id:'salaire', label:'Salaire', icon:'💼'},
@@ -189,6 +209,12 @@ function openModal(opts){
     if(f.type === 'checkbox'){
       return `<label class="role-filter-toggle"><input type="checkbox" id="modal_${f.id}" ${f.value?'checked':''}><span>${escapeHtml(f.label)}</span></label>`;
     }
+    if(f.type === 'hint'){
+      // Paragraphe d'information simple (pas un champ de saisie) — utilisé par
+      // exemple pour l'indication de frais mobile money mise à jour en direct
+      // dans la modale de transfert (voir opts.onRender ci-dessous).
+      return `<p class="form-hint" id="modal_${f.id}">${f.value||''}</p>`;
+    }
     if(f.type === 'select'){
       const optsHtml = (f.options||[]).map(o => `<option value="${escapeHtml(o.value)}" ${String(o.value)===String(f.value)?'selected':''}>${escapeHtml(o.label)}</option>`).join('');
       return `<div class="field-group"><label class="field-label">${escapeHtml(f.label)}</label><select id="modal_${f.id}">${optsHtml}</select></div>`;
@@ -234,6 +260,10 @@ function openModal(opts){
       apply();
     }
   }
+  // Point d'extension optionnel : permet à l'appelant de brancher son propre
+  // comportement une fois les champs présents dans le DOM (ex. mise à jour en
+  // direct d'un champ "hint" quand un autre champ change — voir openTransferModal).
+  if(typeof opts.onRender === 'function') opts.onRender();
   document.getElementById('modalForm').addEventListener('submit', e => {
     e.preventDefault();
     const values = {};
@@ -283,6 +313,71 @@ function alertModal(message, opts){
   });
 }
 window.alertModal = alertModal;
+/* ============ AIDE (« ❓ » sur chaque vue principale) ============
+   Comme demandé ("comme tout application ou site internet complexe") :
+   un petit tableau explicatif par vue principale, ouvert dans la même
+   modale Userform que le reste du site, mais affichant un <table> au lieu
+   d'un formulaire. */
+function openHelpModal(title, rows){
+  const overlay = document.getElementById('modalOverlay');
+  const rowsHtml = (rows||[]).map(r => `<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td></tr>`).join('');
+  overlay.innerHTML = `
+    <div class="modal-card">
+      <button type="button" class="modal-close" onclick="closeModal()">✕</button>
+      <h3>❓ ${escapeHtml(title)}</h3>
+      <p class="modal-sub">Comment utiliser cette page.</p>
+      <div class="help-table-wrap"><table class="help-table"><tbody>${rowsHtml}</tbody></table></div>
+      <div class="modal-actions"><button type="button" class="cta-inline" onclick="closeModal()">Compris</button></div>
+    </div>`;
+  overlay.classList.add('show');
+}
+window.openHelpModal = openHelpModal;
+const HELP_TITLES = {dashboard:'Tableau de bord', accounts:'Comptes', revenus:'Revenus', depenses:'Dépenses', calendar:'Calendrier', plus:'Plus'};
+const HELP_CONTENT = {
+  dashboard: [
+    ["Épargne totale", "Le grand chiffre en haut : tout ce que vous avez mis de côté dans vos objectifs d'épargne (onglet Plus → Épargne)."],
+    ["Revenus / Dépense fixe / Dépense variable", "Les trois chiffres du mois en cours, juste en dessous."],
+    ["Budget global du mois", "« Prévu » = ce que vous avez budgété ce mois-ci (onglet Dépenses → Budget). « Réel » = ce que vous avez réellement dépensé dans ces catégories. La barre montre le pourcentage réel/prévu."],
+    ["Prochaines dépenses", "Vos factures et dépenses récurrentes à venir dans les 30 prochains jours."],
+    ["Aperçu des comptes", "Le solde de chacun de vos moyens financiers."],
+    ["Alertes budget", "Vous prévient si vous dépensez plus que ce que vous recevez ce mois-ci, ou si un budget par catégorie approche sa limite."],
+    ["Argent utilisable / réellement disponible", "« Utilisable » exclut votre épargne réservée. « Réellement disponible » retire en plus vos prochaines factures et récurrences déjà prévues."],
+  ],
+  accounts: [
+    ["Mes comptes", "Tous vos moyens financiers (banque, mobile money, espèces…) et leur solde actuel."],
+    ["+ Nouveau moyen financier", "Ajoutez un compte, une carte ou une caisse."],
+    ["🔁 Nouveau transfert", "Déplacez de l'argent d'un compte à un autre (ex. Banque → Espèces) — ce n'est ni une dépense ni un revenu, cela ne fausse donc pas vos statistiques."],
+    ["Transferts récents", "L'historique de vos derniers transferts entre comptes."],
+  ],
+  revenus: [
+    ["+ Nouveau revenu", "Enregistrez chaque somme que vous recevez, sa catégorie et le compte qui la reçoit."],
+    ["Récurrences de revenus", "Cochez « récurrent » sur un revenu (ex. salaire) pour qu'il réapparaisse chaque mois — cliquez « Enregistrer ce mois » pour le confirmer."],
+    ["Historique", "Recherchez et filtrez tous vos revenus passés, par mois ou par catégorie."],
+  ],
+  depenses: [
+    ["+ Nouvelle dépense", "Enregistrez chaque sortie d'argent, sa catégorie et le compte utilisé."],
+    ["Dépense fixe", "Les charges qui reviennent à l'identique chaque mois : maison, éducation, dettes, et vos factures."],
+    ["Dépense variable", "Les dépenses dont le montant change d'un mois à l'autre : nourriture, santé, habillement, transport, loisirs…"],
+    ["Budget", "Fixez un plafond mensuel par catégorie et comparez ce qui est prévu à ce qui est réellement dépensé."],
+    ["Historique des dépenses", "Recherchez et filtrez toutes vos dépenses — y compris par nature (fixe ou variable)."],
+  ],
+  calendar: [
+    ["Vue mensuelle", "Chaque jour affiche les mouvements réels et les mouvements prévus (factures, récurrences à venir)."],
+    ["Cliquer sur un jour", "Affiche le détail complet des mouvements de ce jour-là."],
+  ],
+  plus: [
+    ["Épargne", "Vos objectifs d'épargne et leur progression."],
+    ["Dettes", "Le suivi de vos crédits en cours et de leurs remboursements."],
+    ["Foyer", "Les personnes qui composent votre foyer, présentes ou parties."],
+    ["Paramètres", "Votre profil, vos catégories personnalisées et vos sauvegardes."],
+    ["Rapport", "L'évolution de votre budget sur 6 mois, avec export CSV et PDF."],
+    ["Prévisions", "Ce qui va probablement se passer financièrement dans les prochains jours, à partir de vos comptes, factures et récurrences."],
+  ],
+};
+function showHelp(view){
+  openHelpModal(HELP_TITLES[view] || '', HELP_CONTENT[view] || []);
+}
+window.showHelp = showHelp;
 function initials(name){
   const c = (name||'').trim().slice(0,1).toUpperCase();
   return c || '?';
@@ -704,7 +799,15 @@ function authErrorMessage(err){
     'auth/requires-recent-login': "Par sécurité, reconnectez-vous puis réessayez immédiatement cette action.",
     'auth/user-mismatch': "Ce mot de passe ne correspond pas au compte connecté.",
   };
-  return map[err.code] || ("Erreur : " + (err.message || err.code || 'inconnue'));
+  if(map[err.code]) return map[err.code];
+  // Bug de stockage propre au navigateur (fréquent sur Safari iPhone après une
+  // longue inactivité ou en navigation privée) : message clair et actionnable
+  // plutôt que le texte technique brut renvoyé par le navigateur.
+  const msg = String(err.message || '');
+  if(/backing store|object store|indexeddb/i.test(msg)){
+    return "Le navigateur rencontre un problème de stockage local (fréquent sur iPhone après une longue inactivité, ou en navigation privée). Essayez de recharger la page ; si ça persiste, quittez la navigation privée ou videz les données de ce site dans les réglages du navigateur, puis réessayez.";
+  }
+  return "Erreur : " + (err.message || err.code || 'inconnue');
 }
 document.getElementById('loginForm').addEventListener('submit', e => {
   e.preventDefault();
@@ -870,10 +973,14 @@ auth.onAuthStateChanged(user => {
 });
 
 /* ============ NAVIGATION ============
-   5 onglets principaux ; tout le reste vit derrière l'onglet "Plus" (menu en
-   grille) pour ne pas surcharger l'interface quelle que soit la taille du foyer. */
-const MAIN_VIEWS = ['dashboard','accounts','transactions','budget','plus'];
-const PLUS_CHILDREN = ['bills','savings','debts','foyer','forecast','calendar','reports','settings'];
+   6 onglets principaux (Tableau de bord / Comptes / Revenus / Dépenses /
+   Calendrier / Plus) ; tout le reste vit derrière l'onglet "Plus" (menu en
+   grille) pour ne pas surcharger l'interface quelle que soit la taille du foyer.
+   Factures et Budget ne sont plus des vues séparées : leurs sections vivent
+   désormais à l'intérieur de la vue Dépenses (mêmes éléments, mêmes fonctions
+   de rendu — seul leur emplacement dans le DOM a changé). */
+const MAIN_VIEWS = ['dashboard','accounts','revenus','depenses','calendar','plus'];
+const PLUS_CHILDREN = ['savings','debts','foyer','settings','reports','forecast'];
 const VIEWS = MAIN_VIEWS.concat(PLUS_CHILDREN);
 function switchView(view){
   if(!VIEWS.includes(view)) view = 'dashboard';
@@ -904,8 +1011,10 @@ function renderAll(){
   fillAllPersonSelects();
   renderDashboard();
   renderAccounts();
+  renderTransfersHistory();
   renderRecurring();
-  renderTransactions();
+  renderRevenusHistory();
+  renderDepensesHistory();
   renderBudget();
   renderBills();
   renderSavings();
@@ -930,6 +1039,16 @@ function categoryInfo(id, type){
   const list = type === 'revenu' ? allIncomeCategories() : allExpenseCategories();
   return list.find(c => c.id === id) || {id, label:id, icon:'📦'};
 }
+/* 'fixe' ou 'variable', déterminé une fois pour toutes par catégorie de
+   dépense (voir EXPENSE_CATEGORIES et le formulaire "Catégories
+   personnalisées" de Paramètres). Par défaut 'variable' si non précisé. */
+function categoryNature(catId){
+  const builtin = EXPENSE_CATEGORIES.find(c => c.id === catId);
+  if(builtin) return builtin.nature || 'variable';
+  const custom = (DATA.categories||[]).find(c => c.id === catId && c.type === 'depense');
+  if(custom) return custom.nature || 'variable';
+  return 'variable';
+}
 function fillCategorySelect(selectEl, type, keepValue){
   if(!selectEl) return;
   const prev = keepValue ? selectEl.value : null;
@@ -941,19 +1060,17 @@ function fillAllCategorySelects(){
   fillCategorySelect(document.getElementById('inCategory'), 'revenu', true);
   fillCategorySelect(document.getElementById('exCategory'), 'depense', true);
   fillCategorySelect(document.getElementById('bgCategory'), 'depense', true);
-  const txnCat = document.getElementById('txnFilterCategory');
-  if(txnCat){
-    const prev = txnCat.value;
-    const all = allExpenseCategories().concat(allIncomeCategories());
-    const seen = new Set();
-    const opts = ['<option value="">Toutes catégories</option>'];
-    all.forEach(c => {
-      if(seen.has(c.id)) return;
-      seen.add(c.id);
-      opts.push(`<option value="${c.id}">${c.icon} ${escapeHtml(c.label)}</option>`);
-    });
-    txnCat.innerHTML = opts.join('');
-    txnCat.value = prev;
+  const revCat = document.getElementById('revFilterCategory');
+  if(revCat){
+    const prev = revCat.value;
+    revCat.innerHTML = '<option value="">Toutes catégories</option>' + allIncomeCategories().map(c => `<option value="${c.id}">${c.icon} ${escapeHtml(c.label)}</option>`).join('');
+    revCat.value = prev;
+  }
+  const depCat = document.getElementById('depFilterCategory');
+  if(depCat){
+    const prev = depCat.value;
+    depCat.innerHTML = '<option value="">Toutes catégories</option>' + allExpenseCategories().map(c => `<option value="${c.id}">${c.icon} ${escapeHtml(c.label)}</option>`).join('');
+    depCat.value = prev;
   }
   const cmpCat = document.getElementById('reportComparisonCategory');
   if(cmpCat){
@@ -1176,8 +1293,6 @@ function fillAccountSelect(selectEl, keepValue, allowEmpty){
   if(prev && accounts.some(a => a.id === prev)) selectEl.value = prev;
 }
 function fillAllAccountSelects(){
-  fillAccountSelect(document.getElementById('trFrom'), true, false);
-  fillAccountSelect(document.getElementById('trTo'), true, false);
   fillAccountSelect(document.getElementById('inAccount'), true, false);
   fillAccountSelect(document.getElementById('exAccount'), true, false);
   fillAccountSelect(document.getElementById('blAccount'), true, true);
@@ -1205,6 +1320,15 @@ function renderAccounts(){
         </div>
       </div>`;
   }).join('') : `<div class="empty">Aucun moyen financier pour l'instant.</div>`;
+}
+/* Historique compact des transferts, affiché en bas de l'onglet Comptes
+   (les 20 plus récents) — la modale "🔁 Nouveau transfert" reste le seul
+   moyen d'en créer un. */
+function renderTransfersHistory(){
+  const el = document.getElementById('transfersHistoryList');
+  if(!el) return;
+  const list = (DATA.transactions||[]).filter(t => t.type === 'transfert').slice().sort((a,b) => b.date.localeCompare(a.date)).slice(0,20);
+  el.innerHTML = list.length ? list.map(txnRowHtml).join('') : `<div class="empty">Aucun transfert pour le moment.</div>`;
 }
 document.getElementById('newAccountForm').addEventListener('submit', e => {
   e.preventDefault();
@@ -1265,46 +1389,59 @@ function transferFee(fromId, amount){
   if(!from || !amount || amount <= 0) return 0;
   return MOBILE_MONEY_TYPES.includes(from.type) ? Math.round(amount * 0.01) : 0;
 }
-function updateTransferFeeHint(){
-  const hint = document.getElementById('trFeeHint');
-  if(!hint) return;
-  const fromId = document.getElementById('trFrom').value;
-  const amount = Number(document.getElementById('trAmount').value);
-  const fee = transferFee(fromId, amount);
-  if(fee > 0){
-    hint.innerHTML = `⚠️ Frais mobile money (1%) : <b>${formatFCFA(fee)}</b> — le compte de destination recevra ${formatFCFA(amount - fee)}.`;
-  } else {
-    hint.textContent = '';
-  }
-}
-document.getElementById('trFrom').addEventListener('change', updateTransferFeeHint);
-document.getElementById('trAmount').addEventListener('input', updateTransferFeeHint);
-document.getElementById('transferForm').addEventListener('submit', e => {
-  e.preventDefault();
-  const fromId = document.getElementById('trFrom').value;
-  const toId = document.getElementById('trTo').value;
-  const amount = Number(document.getElementById('trAmount').value);
-  const note = document.getElementById('trNote').value.trim();
-  if(!fromId || !toId || fromId === toId || !amount || amount <= 0) {
-    alertModal('Choisissez deux comptes différents et un montant valide.');
-    return;
-  }
-  const from = accountById(fromId), to = accountById(toId);
-  if(!from || !to) return;
-  const fee = transferFee(fromId, amount);
-  const received = amount - fee;
-  from.balance -= amount;
-  to.balance += received;
-  DATA.transactions.push({
-    id: genId('txn'), type:'transfert', amount, date: todayStr(),
-    accountId: fromId, toAccountId: toId, note, category:'', subcategory:'', personId:'foyer', fee
+/* Transfert entre comptes : désormais ouvert depuis une modale (bouton
+   "🔁 Nouveau transfert" en haut de l'onglet Comptes) plutôt que depuis un
+   formulaire fixe dans la page — même logique de calcul et de frais qu'avant,
+   simplement présentée en Userform. */
+function openTransferModal(){
+  const accounts = DATA.accounts || [];
+  if(accounts.length < 2){ alertModal('Il faut au moins deux comptes pour effectuer un transfert.'); return; }
+  const accOptions = accounts.map(a => ({value:a.id, label:`${accountTypeInfo(a.type).icon} ${a.name} (${formatFCFA(a.balance)})`}));
+  openModal({
+    title: 'Transfert entre comptes',
+    sub: "Déplace de l'argent d'un compte à un autre : ce n'est ni une dépense ni un revenu, cela ne fausse donc pas vos statistiques.",
+    submitLabel: 'Effectuer le transfert',
+    fields: [
+      {id:'from', label:'Depuis', type:'select', value:accOptions[0].value, options:accOptions},
+      {id:'to', label:'Vers', type:'select', value:(accOptions[1]||accOptions[0]).value, options:accOptions},
+      {id:'amount', label:'Montant (FCFA)', type:'number', value:''},
+      {id:'note', label:'Note (facultatif)', type:'text', value:'', placeholder:'Ex. Retrait pour dépenses courantes'},
+      {id:'feehint', label:'', type:'hint', value:''},
+    ],
+    onRender(){
+      const fromEl = document.getElementById('modal_from');
+      const amountEl = document.getElementById('modal_amount');
+      const hintEl = document.getElementById('modal_feehint');
+      const update = () => {
+        const fee = transferFee(fromEl.value, Number(amountEl.value));
+        hintEl.innerHTML = fee > 0 ? `⚠️ Frais mobile money (1%) : <b>${formatFCFA(fee)}</b> — le compte de destination recevra ${formatFCFA(Number(amountEl.value) - fee)}.` : '';
+      };
+      fromEl.addEventListener('change', update);
+      amountEl.addEventListener('input', update);
+    },
+    onSubmit(v){
+      const fromId = v.from, toId = v.to, amount = Number(v.amount), note = (v.note||'').trim();
+      if(!fromId || !toId || fromId === toId || !amount || amount <= 0){
+        alertModal('Choisissez deux comptes différents et un montant valide.');
+        return;
+      }
+      const from = accountById(fromId), to = accountById(toId);
+      if(!from || !to) return;
+      const fee = transferFee(fromId, amount);
+      const received = amount - fee;
+      from.balance -= amount;
+      to.balance += received;
+      DATA.transactions.push({
+        id: genId('txn'), type:'transfert', amount, date: todayStr(),
+        accountId: fromId, toAccountId: toId, note, category:'', subcategory:'', personId:'foyer', fee
+      });
+      saveData();
+      renderAll();
+      showToast(fee > 0 ? `Transfert effectué : ${from.name} → ${to.name} (frais 1% : ${formatFCFA(fee)})` : `Transfert effectué : ${from.name} → ${to.name}`);
+    }
   });
-  saveData();
-  e.target.reset();
-  document.getElementById('trFeeHint').textContent = '';
-  renderAll();
-  showToast(fee > 0 ? `Transfert effectué : ${from.name} → ${to.name} (frais 1% : ${formatFCFA(fee)})` : `Transfert effectué : ${from.name} → ${to.name}`);
-});
+}
+window.openTransferModal = openTransferModal;
 
 /* ============ REVENUS & DÉPENSES ============ */
 document.getElementById('inDate').value = todayStr();
@@ -1384,30 +1521,48 @@ function deleteTransaction(id){
 }
 window.deleteTransaction = deleteTransaction;
 
-/* ============ RÉCURRENCES & CHARGES FIXES ============ */
+/* ============ RÉCURRENCES & CHARGES FIXES ============
+   Depuis la restructuration en Revenus / Dépenses, les récurrences sont
+   réparties dans trois listes distinctes (revenus, dépenses de nature fixe,
+   dépenses de nature variable — voir categoryNature()) plutôt qu'une liste
+   unique : chacune vit dans l'onglet correspondant. */
+function recurringRowHtml(r, key){
+  const info = categoryInfo(r.category, r.type);
+  const done = r.lastRecordedMonth === key;
+  const sign = r.type === 'revenu' ? 'pos' : 'neg';
+  return `
+    <div class="row-item">
+      <div class="row-icon">${info.icon}</div>
+      <div class="row-body">
+        <div class="row-title">${escapeHtml(r.label)} ${r.fixedCharge?'<span class="tag violet">Charge fixe</span>':''} ${done?'<span class="tag green">Fait ce mois</span>':'<span class="tag orange">À enregistrer</span>'}</div>
+        <div class="row-sub">${r.type === 'revenu' ? 'Revenu' : 'Dépense'} · le ${r.day} de chaque mois · ${escapeHtml(accountById(r.accountId)?accountById(r.accountId).name:'—')}${r.personId && r.personId!=='foyer' ? ' · '+escapeHtml(personLabel(r.personId)) : ''}</div>
+      </div>
+      <div class="row-amount ${sign}">${r.type==='revenu'?'+':'-'}${formatFCFA(r.amount)}</div>
+      <div class="row-actions">
+        <button class="icon-btn" title="Enregistrer ce mois" ${done?'disabled':''} onclick="recordRecurring('${r.id}')">✔</button>
+        <button class="icon-btn" title="Charge fixe ?" onclick="toggleFixedCharge('${r.id}')">📌</button>
+        <button class="icon-btn danger" title="Supprimer" onclick="deleteRecurring('${r.id}')">🗑</button>
+      </div>
+    </div>`;
+}
 function renderRecurring(){
-  const el = document.getElementById('recurringList');
   const list = DATA.recurring || [];
   const key = currentMonthKey();
-  el.innerHTML = list.length ? list.map(r => {
-    const info = categoryInfo(r.category, r.type);
-    const done = r.lastRecordedMonth === key;
-    const sign = r.type === 'revenu' ? 'pos' : 'neg';
-    return `
-      <div class="row-item">
-        <div class="row-icon">${info.icon}</div>
-        <div class="row-body">
-          <div class="row-title">${escapeHtml(r.label)} ${r.fixedCharge?'<span class="tag violet">Charge fixe</span>':''} ${done?'<span class="tag green">Fait ce mois</span>':'<span class="tag orange">À enregistrer</span>'}</div>
-          <div class="row-sub">${r.type === 'revenu' ? 'Revenu' : 'Dépense'} · le ${r.day} de chaque mois · ${escapeHtml(accountById(r.accountId)?accountById(r.accountId).name:'—')}${r.personId && r.personId!=='foyer' ? ' · '+escapeHtml(personLabel(r.personId)) : ''}</div>
-        </div>
-        <div class="row-amount ${sign}">${r.type==='revenu'?'+':'-'}${formatFCFA(r.amount)}</div>
-        <div class="row-actions">
-          <button class="icon-btn" title="Enregistrer ce mois" ${done?'disabled':''} onclick="recordRecurring('${r.id}')">✔</button>
-          <button class="icon-btn" title="Charge fixe ?" onclick="toggleFixedCharge('${r.id}')">📌</button>
-          <button class="icon-btn danger" title="Supprimer" onclick="deleteRecurring('${r.id}')">🗑</button>
-        </div>
-      </div>`;
-  }).join('') : `<div class="empty">Aucune récurrence pour le moment. Cochez "récurrent(e)" sur un revenu ou une dépense pour en créer une.</div>`;
+  const incomeEl = document.getElementById('recurringListIncome');
+  if(incomeEl){
+    const incomeList = list.filter(r => r.type === 'revenu');
+    incomeEl.innerHTML = incomeList.length ? incomeList.map(r => recurringRowHtml(r, key)).join('') : `<div class="empty">Aucun revenu récurrent pour le moment. Cochez "récurrent" sur un revenu pour en créer un.</div>`;
+  }
+  const fixedEl = document.getElementById('recurringListFixed');
+  if(fixedEl){
+    const fixedList = list.filter(r => r.type === 'depense' && categoryNature(r.category) === 'fixe');
+    fixedEl.innerHTML = fixedList.length ? fixedList.map(r => recurringRowHtml(r, key)).join('') : `<div class="empty">Aucune dépense fixe récurrente pour le moment.</div>`;
+  }
+  const varEl = document.getElementById('recurringListVariable');
+  if(varEl){
+    const varList = list.filter(r => r.type === 'depense' && categoryNature(r.category) === 'variable');
+    varEl.innerHTML = varList.length ? varList.map(r => recurringRowHtml(r, key)).join('') : `<div class="empty">Aucune dépense variable récurrente pour le moment.</div>`;
+  }
 }
 function recordRecurring(id){
   const r = (DATA.recurring||[]).find(x => x.id === id);
@@ -1448,23 +1603,43 @@ function deleteRecurring(id){
 }
 window.deleteRecurring = deleteRecurring;
 
-/* ============ HISTORIQUE ============ */
-function clearTxnFilters(){
-  document.getElementById('txnFilterType').value = 'all';
-  document.getElementById('txnFilterMonth').value = '';
-  document.getElementById('txnFilterCategory').value = '';
-  const searchEl = document.getElementById('txnFilterSearch');
+/* ============ HISTORIQUE ============
+   Depuis la restructuration, chaque type de mouvement a sa propre vue et donc
+   son propre historique filtrable : Revenus (revenus uniquement), Dépenses
+   (dépenses uniquement, avec un filtre supplémentaire fixe/variable), et un
+   petit historique des transferts dans Comptes (voir renderTransfersHistory
+   plus haut, sans filtre). */
+function clearRevFilters(){
+  document.getElementById('revFilterMonth').value = '';
+  document.getElementById('revFilterCategory').value = '';
+  const searchEl = document.getElementById('revFilterSearch');
   if(searchEl) searchEl.value = '';
-  renderTransactions();
+  renderRevenusHistory();
 }
-window.clearTxnFilters = clearTxnFilters;
-['txnFilterType','txnFilterMonth','txnFilterCategory'].forEach(id => {
-  document.getElementById(id).addEventListener('change', renderTransactions);
+window.clearRevFilters = clearRevFilters;
+['revFilterMonth','revFilterCategory'].forEach(id => {
+  const el = document.getElementById(id);
+  if(el) el.addEventListener('change', renderRevenusHistory);
 });
-/* Recherche libre (note, sous-catégorie, catégorie, personne, compte) —
-   en plus des filtres existants, sans les remplacer. */
-const txnFilterSearchEl = document.getElementById('txnFilterSearch');
-if(txnFilterSearchEl) txnFilterSearchEl.addEventListener('input', renderTransactions);
+const revFilterSearchEl = document.getElementById('revFilterSearch');
+if(revFilterSearchEl) revFilterSearchEl.addEventListener('input', renderRevenusHistory);
+
+function clearDepFilters(){
+  document.getElementById('depFilterMonth').value = '';
+  document.getElementById('depFilterCategory').value = '';
+  document.getElementById('depFilterNature').value = '';
+  const searchEl = document.getElementById('depFilterSearch');
+  if(searchEl) searchEl.value = '';
+  renderDepensesHistory();
+}
+window.clearDepFilters = clearDepFilters;
+['depFilterMonth','depFilterCategory','depFilterNature'].forEach(id => {
+  const el = document.getElementById(id);
+  if(el) el.addEventListener('change', renderDepensesHistory);
+});
+const depFilterSearchEl = document.getElementById('depFilterSearch');
+if(depFilterSearchEl) depFilterSearchEl.addEventListener('input', renderDepensesHistory);
+
 function txnRowHtml(t){
   const from = accountById(t.accountId);
   const to = accountById(t.toAccountId);
@@ -1502,23 +1677,13 @@ function transactionSearchText(t){
   const acc = accountById(t.accountId) ? accountById(t.accountId).name : '';
   return [t.note, t.subcategory, cat, personLabel(t.personId||'foyer'), acc].filter(Boolean).join(' ').toLowerCase();
 }
-function renderTransactions(){
-  const typeFilter = document.getElementById('txnFilterType').value;
-  const monthFilter = document.getElementById('txnFilterMonth').value;
-  const catFilter = document.getElementById('txnFilterCategory').value;
-  const searchEl = document.getElementById('txnFilterSearch');
-  const searchFilter = searchEl ? searchEl.value.trim().toLowerCase() : '';
-  let list = (DATA.transactions || []).slice();
-  if(typeFilter !== 'all') list = list.filter(t => t.type === typeFilter);
-  if(monthFilter) list = list.filter(t => monthKeyOf(t.date) === monthFilter);
-  if(catFilter) list = list.filter(t => t.category === catFilter);
-  if(searchFilter) list = list.filter(t => transactionSearchText(t).includes(searchFilter));
-  list.sort((a,b) => b.date.localeCompare(a.date));
-  const el = document.getElementById('txnList');
+/* Regroupe une liste de transactions déjà filtrée/triée par jour, avec le
+   solde net de la journée en en-tête (revenus - dépenses ; les transferts et
+   mouvements d'épargne ne comptent pas dans ce solde). Partagé par les
+   historiques Revenus et Dépenses. */
+function renderTxnGroupedList(el, list){
+  if(!el) return;
   if(!list.length){ el.innerHTML = `<div class="empty">Aucun mouvement pour ces filtres.</div>`; return; }
-  // Regroupe l'historique par jour, avec le solde net de la journée en en-tête
-  // (revenus - dépenses ; les transferts et mouvements d'épargne ne comptent
-  // pas dans ce solde, comme dans le reste de l'application).
   const capped = list.slice(0,200);
   const groups = [];
   capped.forEach(t => {
@@ -1532,6 +1697,32 @@ function renderTransactions(){
     const header = `<div class="txn-day-header"><span>${formatDateLong(g.date)}</span><span class="${netCls}">${net>=0?'+':''}${formatFCFA(net)}</span></div>`;
     return header + g.items.map(txnRowHtml).join('');
   }).join('');
+}
+function renderRevenusHistory(){
+  const monthFilter = document.getElementById('revFilterMonth').value;
+  const catFilter = document.getElementById('revFilterCategory').value;
+  const searchEl = document.getElementById('revFilterSearch');
+  const searchFilter = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  let list = (DATA.transactions || []).filter(t => t.type === 'revenu');
+  if(monthFilter) list = list.filter(t => monthKeyOf(t.date) === monthFilter);
+  if(catFilter) list = list.filter(t => t.category === catFilter);
+  if(searchFilter) list = list.filter(t => transactionSearchText(t).includes(searchFilter));
+  list.sort((a,b) => b.date.localeCompare(a.date));
+  renderTxnGroupedList(document.getElementById('revTxnList'), list);
+}
+function renderDepensesHistory(){
+  const monthFilter = document.getElementById('depFilterMonth').value;
+  const catFilter = document.getElementById('depFilterCategory').value;
+  const natureFilter = document.getElementById('depFilterNature').value;
+  const searchEl = document.getElementById('depFilterSearch');
+  const searchFilter = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  let list = (DATA.transactions || []).filter(t => t.type === 'depense');
+  if(monthFilter) list = list.filter(t => monthKeyOf(t.date) === monthFilter);
+  if(catFilter) list = list.filter(t => t.category === catFilter);
+  if(natureFilter) list = list.filter(t => categoryNature(t.category) === natureFilter);
+  if(searchFilter) list = list.filter(t => transactionSearchText(t).includes(searchFilter));
+  list.sort((a,b) => b.date.localeCompare(a.date));
+  renderTxnGroupedList(document.getElementById('depTxnList'), list);
 }
 
 /* ============ BUDGET ============ */
@@ -2052,7 +2243,7 @@ function renderReports(){
 function renderReportComparison(){
   const cat = document.getElementById('reportComparisonCategory').value;
   if(!cat) return;
-  const months = [addMonthsToKey(reportMonth,-2), addMonthsToKey(reportMonth,-1), reportMonth];
+  const months = [5,4,3,2,1,0].map(n => addMonthsToKey(reportMonth, -n));
   const totals = months.map(k => sumAmount(expensesForMonth(k, cat)));
   const rows = months.map((k,i) => {
     let change = '';
@@ -2189,7 +2380,7 @@ function renderSettings(){
   const el = document.getElementById('settingsCategoriesList');
   const customCats = DATA.categories || [];
   el.innerHTML = customCats.length ? customCats.map(c => `
-    <div class="row-item"><div class="row-icon">🏷️</div><div class="row-body"><div class="row-title">${escapeHtml(c.label)}</div><div class="row-sub">${c.type==='revenu'?'Revenu':'Dépense'}</div></div>
+    <div class="row-item"><div class="row-icon">🏷️</div><div class="row-body"><div class="row-title">${escapeHtml(c.label)}</div><div class="row-sub">${c.type==='revenu'?'Revenu':'Dépense'}${c.type==='depense' ? ' · '+(c.nature==='fixe'?'Fixe':'Variable') : ''}</div></div>
     <div class="row-actions"><button class="icon-btn danger" title="Supprimer" onclick="deleteCategory('${c.id}')">🗑</button></div></div>
   `).join('') : `<div class="empty">Aucune catégorie personnalisée.</div>`;
 }
@@ -2216,16 +2407,30 @@ function editProfile(){
   });
 }
 window.editProfile = editProfile;
+/* Le champ "Nature" (fixe/variable) n'a de sens que pour une catégorie de
+   dépense — il se masque automatiquement pour une catégorie de revenu. */
+function updateCatNatureVisibility(){
+  const typeEl = document.getElementById('catType');
+  const natureEl = document.getElementById('catNature');
+  if(!typeEl || !natureEl) return;
+  natureEl.style.display = typeEl.value === 'depense' ? '' : 'none';
+}
+document.getElementById('catType').addEventListener('change', updateCatNatureVisibility);
+updateCatNatureVisibility();
 document.getElementById('newCategoryForm').addEventListener('submit', e => {
   e.preventDefault();
   const label = document.getElementById('catLabel').value.trim();
   const type = document.getElementById('catType').value;
+  const nature = document.getElementById('catNature').value;
   if(!label) return;
   const id = 'custom_' + label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
   if((DATA.categories||[]).some(c => c.id === id)){ alertModal('Cette catégorie existe déjà.'); return; }
-  DATA.categories.push({id, label, type, custom:true});
+  const cat = {id, label, type, custom:true};
+  if(type === 'depense') cat.nature = nature;
+  DATA.categories.push(cat);
   saveData();
   e.target.reset();
+  updateCatNatureVisibility();
   renderAll();
   renderSettings();
   showToast('Catégorie ajoutée ✅');
@@ -2275,7 +2480,23 @@ function importData(file){
 }
 window.importData = importData;
 
-/* ============ TABLEAU DE BORD ============ */
+/* ============ TABLEAU DE BORD ============
+   Compare ce qui est reçu ce mois-ci à ce qui est réellement dépensé —
+   complète les alertes par catégorie (budgetAlerts) avec une vue d'ensemble,
+   comme demandé pour la nouvelle carte "Alertes budget" du tableau de bord. */
+function revenueVsExpenseAlert(){
+  const key = currentMonthKey();
+  const rev = sumAmount((DATA.transactions||[]).filter(t => t.type==='revenu' && monthKeyOf(t.date)===key));
+  const dep = sumAmount(expensesForMonth(key));
+  if(!rev && !dep) return null;
+  if(dep > rev){
+    return {level:'red', text:`Vous avez dépensé ${formatFCFA(dep)} ce mois-ci pour ${formatFCFA(rev)} reçus — soit ${formatFCFA(dep-rev)} de plus que vos revenus.`};
+  }
+  if(rev > 0 && dep >= rev * 0.9){
+    return {level:'orange', text:`Vous avez déjà dépensé ${Math.round((dep/rev)*100)}% de vos revenus de ce mois (${formatFCFA(dep)} / ${formatFCFA(rev)}).`};
+  }
+  return null;
+}
 function renderDashboard(){
   const key = currentMonthKey();
   const soi = soiPersonne();
@@ -2285,11 +2506,16 @@ function renderDashboard(){
   document.getElementById('dashDate').textContent = new Date().toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long'});
   const usable = totalUsable();
   document.getElementById('dashTotalDisponible').textContent = formatFCFA(usable);
-  document.getElementById('dashTotalSub').textContent = `Total ${formatFCFA(totalAllAccounts())} · Épargne réservée ${formatFCFA(totalReserved())}`;
+  const goals = DATA.savingsGoals || [];
+  document.getElementById('dashEpargneTotale').textContent = formatFCFA(totalReserved());
+  document.getElementById('dashEpargneSub').textContent = goals.length ? `${goals.length} objectif${goals.length>1?'s':''} d'épargne` : 'Aucun objectif pour le moment';
   const revMonth = sumAmount((DATA.transactions||[]).filter(t => t.type==='revenu' && monthKeyOf(t.date)===key));
-  const depMonth = sumAmount(expensesForMonth(key));
+  const monthExpenses = expensesForMonth(key);
+  const depFixeMonth = sumAmount(monthExpenses.filter(t => categoryNature(t.category) === 'fixe'));
+  const depVarMonth = sumAmount(monthExpenses.filter(t => categoryNature(t.category) !== 'fixe'));
   document.getElementById('dashRevenusMonth').textContent = formatFCFA(revMonth);
-  document.getElementById('dashDepensesMonth').textContent = formatFCFA(depMonth);
+  document.getElementById('dashDepenseFixeMonth').textContent = formatFCFA(depFixeMonth);
+  document.getElementById('dashDepenseVariableMonth').textContent = formatFCFA(depVarMonth);
   const nextKey = addMonthsToKey(key, 1);
   const upcoming30 = [
     ...unpaidBillsFor(key).filter(b => daysUntil(b.due) <= 30 && daysUntil(b.due) >= 0),
@@ -2315,7 +2541,9 @@ function renderDashboard(){
   const pctGlobal = totalBudget > 0 ? Math.min(100, Math.round((totalSpentBudgeted/totalBudget)*100)) : 0;
   document.getElementById('dashBudgetGlobalBar').style.width = pctGlobal + '%';
   document.getElementById('dashBudgetGlobalBar').className = 'progress-inner ' + budgetBarClass(pctGlobal, DATA.thresholds);
-  document.getElementById('dashBudgetGlobalLabel').innerHTML = `<span>${formatFCFA(totalSpentBudgeted)} dépensé</span><span>${pctGlobal}%</span>`;
+  document.getElementById('dashBudgetGlobalLabel').innerHTML = `<span>${pctGlobal}% réellement dépensé</span>`;
+  document.getElementById('dashBudgetPrevu').textContent = formatFCFA(totalBudget);
+  document.getElementById('dashBudgetReel').textContent = formatFCFA(totalSpentBudgeted);
   const upcomingItems = [
     ...upcoming30.map(b => ({label:b.name, amount:b.amount, date:b.due})),
     ...upcomingRecItems,
@@ -2328,8 +2556,9 @@ function renderDashboard(){
     const t = accountTypeInfo(a.type);
     return `<div class="row-item"><div class="row-icon">${t.icon}</div><div class="row-body"><div class="row-title">${escapeHtml(a.name)}</div></div><div class="row-amount">${formatFCFA(a.balance)}</div></div>`;
   }).join('') || `<div class="empty">Aucun compte pour le moment.</div>`;
-  const alerts = budgetAlerts();
-  document.getElementById('dashBudgetAlerts').innerHTML = alerts.length ? alerts.map(a => `<div class="alert ${a.level}"><span>${a.level==='red'?'🔴':(a.level==='orange'?'🟠':'🔵')}</span><div><p>${escapeHtml(a.text)}</p></div></div>`).join('') : `<div class="alert green"><span>🟢</span><div><b>Tout va bien</b><p>Aucun budget proche du dépassement.</p></div></div>`;
+  const revExpAlert = revenueVsExpenseAlert();
+  const alerts = (revExpAlert ? [revExpAlert] : []).concat(budgetAlerts());
+  document.getElementById('dashBudgetAlerts').innerHTML = alerts.length ? alerts.map(a => `<div class="alert ${a.level}"><span>${a.level==='red'?'🔴':(a.level==='orange'?'🟠':'🔵')}</span><div><p>${escapeHtml(a.text)}</p></div></div>`).join('') : `<div class="alert green"><span>🟢</span><div><b>Tout va bien</b><p>Vous dépensez moins que vous ne recevez, et aucun budget n'approche sa limite.</p></div></div>`;
 }
 
 /* ============ INIT ============
