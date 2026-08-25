@@ -131,8 +131,9 @@
       <div class="nav">
         <div class="tab active" id="navDashboard" onclick="switchView('dashboard')">Tableau de bord</div>
         <div class="tab" id="navAccounts" onclick="switchView('accounts')">Comptes</div>
-        <div class="tab" id="navTransactions" onclick="switchView('transactions')">Transactions</div>
-        <div class="tab" id="navBudget" onclick="switchView('budget')">Budget</div>
+        <div class="tab" id="navRevenus" onclick="switchView('revenus')">Revenus</div>
+        <div class="tab" id="navDepenses" onclick="switchView('depenses')">Dépenses</div>
+        <div class="tab" id="navCalendar" onclick="switchView('calendar')">Calendrier</div>
         <div class="tab" id="navPlus" onclick="switchView('plus')">Plus</div>
       </div>
       <div class="topbar-actions">
@@ -150,23 +151,31 @@
             <h1 id="dashFoyerTitle">Bon retour</h1>
             <p id="dashSub">Chargement des données…</p>
           </div>
-          <span class="badge" id="dashDate"></span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge" id="dashDate"></span>
+            <button type="button" class="icon-btn" title="Aide" onclick="showHelp('dashboard')">❓</button>
+          </div>
         </div>
         <div class="stat-hero">
-          <div class="label">Argent utilisable</div>
-          <div class="value" id="dashTotalDisponible">0 FCFA</div>
-          <div class="sub" id="dashTotalSub">—</div>
+          <div class="label">Épargne totale</div>
+          <div class="value" id="dashEpargneTotale">0 FCFA</div>
+          <div class="sub" id="dashEpargneSub">—</div>
         </div>
-        <div class="stat-row">
+        <div class="stat-row" style="grid-template-columns:repeat(3,1fr);">
           <div class="stat-box"><div class="label">Revenus (ce mois)</div><div class="value pos" id="dashRevenusMonth">0 FCFA</div></div>
-          <div class="stat-box"><div class="label">Dépenses (ce mois)</div><div class="value neg" id="dashDepensesMonth">0 FCFA</div></div>
+          <div class="stat-box"><div class="label">Dépense fixe (ce mois)</div><div class="value neg" id="dashDepenseFixeMonth">0 FCFA</div></div>
+          <div class="stat-box"><div class="label">Dépense variable (ce mois)</div><div class="value neg" id="dashDepenseVariableMonth">0 FCFA</div></div>
         </div>
         <div class="grid">
           <div>
             <div class="card">
-              <h2>Budget global du mois</h2>
+              <h2 class="budget-card-title">Budget global du mois</h2>
               <div class="progress-outer"><div class="progress-inner" id="dashBudgetGlobalBar" style="width:0%"></div></div>
-              <div class="progress-label" id="dashBudgetGlobalLabel"><span>0 FCFA dépensé</span><span>0%</span></div>
+              <div class="progress-label" id="dashBudgetGlobalLabel"><span>0%</span></div>
+              <div class="budget-card-bottom">
+                <div class="bcb-item"><div class="bcb-label">Prévu</div><div class="bcb-value" id="dashBudgetPrevu">0 FCFA</div></div>
+                <div class="bcb-item right"><div class="bcb-label">Réel</div><div class="bcb-value" id="dashBudgetReel">0 FCFA</div></div>
+              </div>
             </div>
             <div class="card">
               <h2>Prochaines dépenses</h2>
@@ -178,13 +187,17 @@
             </div>
           </div>
           <div>
-            <div class="stat-box" style="margin-bottom:16px;">
-              <div class="label">Argent réellement disponible</div>
-              <div class="value" id="dashReelDisponible">0 FCFA</div>
-            </div>
             <div class="card">
               <h2>Alertes budget</h2>
               <div id="dashBudgetAlerts"></div>
+            </div>
+            <div class="stat-box" style="margin:16px 0;">
+              <div class="label">Argent utilisable</div>
+              <div class="value" id="dashTotalDisponible">0 FCFA</div>
+            </div>
+            <div class="stat-box" style="margin-bottom:16px;">
+              <div class="label">Argent réellement disponible</div>
+              <div class="value" id="dashReelDisponible">0 FCFA</div>
             </div>
             <div class="card">
               <h2>Objectifs d'épargne</h2>
@@ -196,7 +209,13 @@
 
       <!-- ============ COMPTES ============ -->
       <div id="view-accounts" class="view">
-        <div class="hero"><div><h1>Mes moyens financiers</h1><p>Où se trouve votre argent aujourd'hui.</p></div></div>
+        <div class="hero">
+          <div><h1>Mes moyens financiers</h1><p>Où se trouve votre argent aujourd'hui.</p></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="icon-btn wide" onclick="openTransferModal()">🔁 Nouveau transfert</button>
+            <button type="button" class="icon-btn" title="Aide" onclick="showHelp('accounts')">❓</button>
+          </div>
+        </div>
         <div class="stat-row" style="grid-template-columns:repeat(3,1fr);">
           <div class="stat-box"><div class="label">Total</div><div class="value" id="acctTotalAll">0 FCFA</div></div>
           <div class="stat-box"><div class="label">Épargne réservée</div><div class="value" id="acctTotalReserved">0 FCFA</div></div>
@@ -228,22 +247,18 @@
           </form>
         </div>
         <div class="card">
-          <h2>Transfert entre comptes</h2>
-          <p class="form-hint" style="margin:0 0 12px;">Un transfert déplace de l'argent d'un compte à un autre : ce n'est ni une dépense ni un revenu, cela ne fausse donc pas vos statistiques.</p>
-          <form id="transferForm" class="form-grid">
-            <div class="field-group"><label class="field-label">Depuis</label><select id="trFrom"></select></div>
-            <div class="field-group"><label class="field-label">Vers</label><select id="trTo"></select></div>
-            <div class="field-group"><label class="field-label">Montant (FCFA)</label><input type="number" id="trAmount" placeholder="0" min="1" required></div>
-            <div class="field-group"><label class="field-label">Note (facultatif)</label><input type="text" id="trNote" placeholder="Ex. Retrait pour dépenses courantes"></div>
-            <p class="form-hint" id="trFeeHint" style="grid-column:1/-1;"></p>
-            <button type="submit" class="cta-inline secondary form-submit">Effectuer le transfert</button>
-          </form>
+          <h2>Transferts récents</h2>
+          <p class="form-hint" style="margin:0 0 12px;">Un transfert déplace de l'argent d'un compte à un autre : ce n'est ni une dépense ni un revenu, cela ne fausse donc pas vos statistiques. Utilisez « 🔁 Nouveau transfert » en haut de la page pour en effectuer un.</p>
+          <div id="transfersHistoryList"></div>
         </div>
       </div>
 
-      <!-- ============ TRANSACTIONS (revenus / dépenses / récurrences) ============ -->
-      <div id="view-transactions" class="view">
-        <div class="hero"><div><h1>Revenus &amp; dépenses</h1><p>Enregistrez ce qui entre et ce qui sort, et suivez vos récurrences.</p></div></div>
+      <!-- ============ REVENUS ============ -->
+      <div id="view-revenus" class="view">
+        <div class="hero">
+          <div><h1>Revenus</h1><p>Tout ce que vous recevez comme argent, et par quels moyens.</p></div>
+          <button type="button" class="icon-btn" title="Aide" onclick="showHelp('revenus')">❓</button>
+        </div>
         <div class="card">
           <h2>+ Nouveau revenu</h2>
           <form id="newIncomeForm" class="form-grid">
@@ -256,6 +271,29 @@
             <label class="role-filter-toggle"><input type="checkbox" id="inRecurrent"><span>Revenu récurrent (chaque mois)</span></label>
             <button type="submit" class="cta-inline form-submit">Enregistrer le revenu</button>
           </form>
+        </div>
+        <div class="card">
+          <h2>Récurrences de revenus</h2>
+          <p class="form-hint" style="margin:0 0 12px;">Cochez « récurrent » sur un revenu pour qu'il apparaisse ici automatiquement. Chaque mois, cliquez « Enregistrer ce mois » pour créer la transaction réelle.</p>
+          <div id="recurringListIncome"></div>
+        </div>
+        <div class="card">
+          <h2>Historique</h2>
+          <div class="inline-form">
+            <input type="text" id="revFilterSearch" placeholder="🔎 Rechercher (note, catégorie, personne…)">
+            <input type="month" id="revFilterMonth">
+            <select id="revFilterCategory"><option value="">Toutes catégories</option></select>
+            <button type="button" class="icon-btn wide" onclick="clearRevFilters()">Réinitialiser</button>
+          </div>
+          <div id="revTxnList"></div>
+        </div>
+      </div>
+
+      <!-- ============ DÉPENSES ============ -->
+      <div id="view-depenses" class="view">
+        <div class="hero">
+          <div><h1>Dépenses</h1><p>Dépense fixe (factures, maison, autres) et dépense variable (nourriture, santé, habillement, transport…).</p></div>
+          <button type="button" class="icon-btn" title="Aide" onclick="showHelp('depenses')">❓</button>
         </div>
         <div class="card">
           <h2>+ Nouvelle dépense</h2>
@@ -271,27 +309,36 @@
             <button type="submit" class="cta-inline form-submit">Enregistrer la dépense</button>
           </form>
         </div>
-        <div class="card">
-          <h2>Récurrences &amp; charges fixes</h2>
-          <p class="form-hint" style="margin:0 0 12px;">Cochez « récurrent(e) » sur un revenu ou une dépense pour qu'il apparaisse ici automatiquement. Chaque mois, cliquez « Enregistrer ce mois » pour créer la transaction réelle.</p>
-          <div id="recurringList"></div>
-        </div>
-        <div class="card">
-          <h2>Historique</h2>
-          <div class="inline-form">
-            <input type="text" id="txnFilterSearch" placeholder="🔎 Rechercher (note, catégorie, personne…)">
-            <select id="txnFilterType"><option value="all">Tous</option><option value="revenu">Revenus</option><option value="depense">Dépenses</option><option value="transfert">Transferts</option></select>
-            <input type="month" id="txnFilterMonth">
-            <select id="txnFilterCategory"><option value="">Toutes catégories</option></select>
-            <button type="button" class="icon-btn wide" onclick="clearTxnFilters()">Réinitialiser</button>
-          </div>
-          <div id="txnList"></div>
-        </div>
-      </div>
 
-      <!-- ============ BUDGET ============ -->
-      <div id="view-budget" class="view">
-        <div class="hero"><div><h1>Budget mensuel</h1><p>Fixez un montant par catégorie et suivez ce qui reste.</p></div></div>
+        <h2 style="margin:22px 0 10px;font-size:14px;">🔒 Dépense fixe</h2>
+        <div class="card">
+          <h2>Récurrences fixes</h2>
+          <p class="form-hint" style="margin:0 0 12px;">Cochez « récurrente » sur une dépense d'une catégorie fixe (maison, éducation, dettes…) pour qu'elle apparaisse ici chaque mois.</p>
+          <div id="recurringListFixed"></div>
+        </div>
+        <div class="card">
+          <h2>+ Nouvelle facture</h2>
+          <form id="newBillForm" class="form-grid">
+            <div class="field-group"><label class="field-label">Nom</label><input type="text" id="blName" placeholder="Ex. CIE" required></div>
+            <div class="field-group"><label class="field-label">Montant (FCFA)</label><input type="number" id="blAmount" min="1" required></div>
+            <div class="field-group"><label class="field-label">Échéance</label><input type="date" id="blDue" required></div>
+            <div class="field-group"><label class="field-label">Compte prévu (facultatif)</label><select id="blAccount"><option value="">—</option></select></div>
+            <button type="submit" class="cta-inline form-submit">Ajouter la facture</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Toutes les factures</h2>
+          <div id="billsList"></div>
+        </div>
+
+        <h2 style="margin:22px 0 10px;font-size:14px;">📈 Dépense variable</h2>
+        <div class="card">
+          <h2>Récurrences variables</h2>
+          <p class="form-hint" style="margin:0 0 12px;">Les dépenses récurrentes dont le montant reste stable mais qui appartiennent à une catégorie variable (nourriture, santé, habillement, transport…).</p>
+          <div id="recurringListVariable"></div>
+        </div>
+
+        <h2 style="margin:22px 0 10px;font-size:14px;">⚖️ Budget — prévu / réel</h2>
         <div class="card">
           <h2>+ Définir / modifier un budget</h2>
           <form id="newBudgetForm" class="form-grid">
@@ -313,40 +360,33 @@
             <button type="submit" class="icon-btn wide">Mettre à jour</button>
           </form>
         </div>
+
+        <h2 style="margin:22px 0 10px;font-size:14px;">🧾 Historique des dépenses</h2>
+        <div class="card">
+          <div class="inline-form">
+            <input type="text" id="depFilterSearch" placeholder="🔎 Rechercher (note, catégorie, personne…)">
+            <input type="month" id="depFilterMonth">
+            <select id="depFilterCategory"><option value="">Toutes catégories</option></select>
+            <select id="depFilterNature"><option value="">Fixe + variable</option><option value="fixe">Dépense fixe</option><option value="variable">Dépense variable</option></select>
+            <button type="button" class="icon-btn wide" onclick="clearDepFilters()">Réinitialiser</button>
+          </div>
+          <div id="depTxnList"></div>
+        </div>
       </div>
 
       <!-- ============ PLUS (menu secondaire) ============ -->
       <div id="view-plus" class="view">
-        <div class="hero"><div><h1>Plus</h1><p>Tout le reste de votre gestion du foyer.</p></div></div>
+        <div class="hero">
+          <div><h1>Plus</h1><p>Tout le reste de votre gestion du foyer.</p></div>
+          <button type="button" class="icon-btn" title="Aide" onclick="showHelp('plus')">❓</button>
+        </div>
         <div class="plus-grid">
-          <button type="button" class="plus-card" onclick="switchView('bills')"><span class="pc-icon">🧾</span><span class="pc-label">Factures</span><span class="pc-desc">Échéances à venir</span></button>
           <button type="button" class="plus-card" onclick="switchView('savings')"><span class="pc-icon">🐷</span><span class="pc-label">Épargne</span><span class="pc-desc">Vos objectifs</span></button>
           <button type="button" class="plus-card" onclick="switchView('debts')"><span class="pc-icon">💳</span><span class="pc-label">Dettes</span><span class="pc-desc">Crédits en cours</span></button>
           <button type="button" class="plus-card" onclick="switchView('foyer')"><span class="pc-icon">👪</span><span class="pc-label">Foyer</span><span class="pc-desc">Les personnes du foyer</span></button>
-          <button type="button" class="plus-card" onclick="switchView('forecast')"><span class="pc-icon">📈</span><span class="pc-label">Prévisions</span><span class="pc-desc">Ce qui arrive bientôt</span></button>
-          <button type="button" class="plus-card" onclick="switchView('calendar')"><span class="pc-icon">📅</span><span class="pc-label">Calendrier</span><span class="pc-desc">Vue mensuelle</span></button>
-          <button type="button" class="plus-card" onclick="switchView('reports')"><span class="pc-icon">📊</span><span class="pc-label">Rapports</span><span class="pc-desc">Analyse mensuelle</span></button>
           <button type="button" class="plus-card" onclick="switchView('settings')"><span class="pc-icon">⚙️</span><span class="pc-label">Paramètres</span><span class="pc-desc">Profil &amp; sauvegarde</span></button>
-        </div>
-      </div>
-
-      <!-- ============ FACTURES ============ -->
-      <div id="view-bills" class="view">
-        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
-        <div class="hero"><div><h1>Factures</h1><p>Prévoyez et suivez vos échéances — l'application ne paie rien automatiquement.</p></div></div>
-        <div class="card">
-          <h2>+ Nouvelle facture</h2>
-          <form id="newBillForm" class="form-grid">
-            <div class="field-group"><label class="field-label">Nom</label><input type="text" id="blName" placeholder="Ex. CIE" required></div>
-            <div class="field-group"><label class="field-label">Montant (FCFA)</label><input type="number" id="blAmount" min="1" required></div>
-            <div class="field-group"><label class="field-label">Échéance</label><input type="date" id="blDue" required></div>
-            <div class="field-group"><label class="field-label">Compte prévu (facultatif)</label><select id="blAccount"><option value="">—</option></select></div>
-            <button type="submit" class="cta-inline form-submit">Ajouter la facture</button>
-          </form>
-        </div>
-        <div class="card">
-          <h2>Toutes les factures</h2>
-          <div id="billsList"></div>
+          <button type="button" class="plus-card" onclick="switchView('reports')"><span class="pc-icon">📊</span><span class="pc-label">Rapport</span><span class="pc-desc">Évolution sur 6 mois</span></button>
+          <button type="button" class="plus-card" onclick="switchView('forecast')"><span class="pc-icon">📈</span><span class="pc-label">Prévisions</span><span class="pc-desc">Ce qui arrive bientôt</span></button>
         </div>
       </div>
 
@@ -438,8 +478,10 @@
 
       <!-- ============ CALENDRIER ============ -->
       <div id="view-calendar" class="view">
-        <button type="button" class="back-link" onclick="switchView('plus')">‹ Retour à Plus</button>
-        <div class="hero"><div><h1>Calendrier financier</h1><p>Revenus, dépenses, factures et récurrences du mois.</p></div></div>
+        <div class="hero">
+          <div><h1>Calendrier financier</h1><p>Revenus, dépenses, factures et récurrences du mois.</p></div>
+          <button type="button" class="icon-btn" title="Aide" onclick="showHelp('calendar')">❓</button>
+        </div>
         <div class="card">
           <div class="cal-header">
             <button class="cal-nav" onclick="shiftCalMonth(-1)">‹</button>
@@ -483,7 +525,7 @@
           <div id="reportRepartition"></div>
         </div>
         <div class="card">
-          <h2>Évolution sur 3 mois par catégorie</h2>
+          <h2>Évolution sur 6 mois par catégorie</h2>
           <div class="inline-form"><select id="reportComparisonCategory"></select></div>
           <div id="reportComparisonTable"></div>
         </div>
@@ -508,6 +550,7 @@
           <form id="newCategoryForm" class="inline-form">
             <input type="text" id="catLabel" placeholder="Nom de la catégorie" required>
             <select id="catType"><option value="depense">Dépense</option><option value="revenu">Revenu</option></select>
+            <select id="catNature"><option value="variable">Dépense variable</option><option value="fixe">Dépense fixe</option></select>
             <button type="submit" class="icon-btn wide">+ Ajouter</button>
           </form>
           <div id="settingsCategoriesList"></div>
